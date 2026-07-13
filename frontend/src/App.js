@@ -1,53 +1,75 @@
-import { useEffect } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider } from "@/context/AuthContext";
+import { PlatformAuthProvider } from "@/context/PlatformAuthContext";
+import TenantLayout from "@/context/TenantContext";
+import Protected from "@/components/Protected";
+import PlatformProtected from "@/components/PlatformProtected";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import Landing from "@/pages/Landing";
+import Booking from "@/pages/Booking";
+import ManageBooking from "@/pages/ManageBooking";
+import Login from "@/pages/admin/Login";
+import AdminLayout from "@/pages/admin/AdminLayout";
+import Dashboard from "@/pages/admin/Dashboard";
+import Bookings from "@/pages/admin/Bookings";
+import Availability from "@/pages/admin/Availability";
+import AppointmentTypes from "@/pages/admin/AppointmentTypes";
+import Admins from "@/pages/admin/Admins";
+import Settings from "@/pages/admin/Settings";
+import Account from "@/pages/admin/Account";
+import Customise from "@/pages/admin/Customise";
+import Locations from "@/pages/admin/Locations";
+import Branding from "@/pages/admin/Branding";
+import Waitlist from "@/pages/admin/Waitlist";
+import Analytics from "@/pages/admin/Analytics";
+import Customers from "@/pages/admin/Customers";
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
+import PlatformLogin from "@/pages/platform/PlatformLogin";
+import PlatformDashboard from "@/pages/platform/PlatformDashboard";
 
 function App() {
   return (
     <div className="App">
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
+        <PlatformAuthProvider>
+          <AuthProvider>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+
+              {/* Platform (SaaS owner) */}
+              <Route path="/superadmin" element={<PlatformLogin />} />
+              <Route path="/superadmin/app" element={<PlatformProtected><PlatformDashboard /></PlatformProtected>} />
+
+              {/* Tenant space (path-based) */}
+              <Route path="/:tenant" element={<TenantLayout />}>
+                <Route index element={<Booking />} />
+                <Route path="booking/:reference" element={<ManageBooking />} />
+                <Route path="admin/login" element={<Login />} />
+                <Route path="admin" element={<Protected><AdminLayout /></Protected>}>
+                  <Route index element={<Dashboard />} />
+                  <Route path="bookings" element={<Bookings />} />
+                  <Route path="customers" element={<Customers />} />
+                  <Route path="analytics" element={<Analytics />} />
+                  <Route path="availability" element={<Availability />} />
+                  <Route path="appointment-types" element={<AppointmentTypes />} />
+                  <Route path="locations" element={<Locations />} />
+                  <Route path="customise" element={<Customise />} />
+                  <Route path="branding" element={<Branding />} />
+                  <Route path="waitlist" element={<Waitlist />} />
+                  <Route path="admins" element={<Admins />} />
+                  <Route path="settings" element={<Settings />} />
+                  <Route path="account" element={<Account />} />
+                </Route>
+              </Route>
+
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </AuthProvider>
+        </PlatformAuthProvider>
+        <Toaster position="top-center" />
       </BrowserRouter>
     </div>
   );

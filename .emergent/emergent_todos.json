@@ -1,0 +1,38 @@
+[
+  {
+    "content": "Phase 1: Multi-tenant backend foundation (tenants + platform_users, tenant_id scoping, resolver, platform auth + seed)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 1: Platform /superadmin panel (create/list/manage companies + per-tenant seed)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 1 POC: automated tenant-isolation test (35/35 passed)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Port full tenant admin dashboard + public booking flow, scoped by tenant",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Tenant-aware frontend routing /:tenant/* + /superadmin + X-Tenant interceptor",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 3: 7-day trial logic + status gating (expired/suspended lock screens) + trial banner",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 4: White-label branding + logo upload (base64) + per-tenant email theming",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2-4: End-to-end testing (platform + public booking + tenant admin + isolation) via testing agent",
+    "status": "in_progress"
+  },
+  {
+    "content": "Phase 5: Docker/Dockge compose + Nginx path-routing docs + 'add a client' checklist",
+    "status": "pending"
+  }
+]
