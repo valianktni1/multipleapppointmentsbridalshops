@@ -66,7 +66,9 @@ Delivered:
 
 ---
 
-### Phase 6 — Tenant Admin Help/Guide + Common SMTP Settings List (IN PROGRESS — P0)
+### Phase 6 — Tenant Admin Help/Guide + Common SMTP Settings List (COMPLETED — P0)
+**Result:** All features shipped & verified by frontend testing agent (iteration_8.json — 100%, incl. scope check that SMTP guide is absent from Platform Superadmin portal). Files added: `constants/smtpProviders.js`, `components/admin/SmtpGuideModal.jsx`, `pages/admin/HelpGuide.jsx`. Files updated: `components/admin/ui.jsx` (Modal size prop), `components/admin/EmailSettingsForm.jsx` (showSmtpGuide prop), `pages/admin/Account.jsx`, `pages/admin/AdminLayout.jsx`, `App.js`.
+
 **Goal:** Reduce tenant onboarding friction and reduce SMTP support tickets by embedding guidance in the tenant admin.
 
 **Scope decisions (confirmed by user):**
