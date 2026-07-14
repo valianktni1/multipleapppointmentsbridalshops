@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Wordmark, DesignerCredit } from "@/components/Brand";
 
 const NAV = [
+  { seg: "help", icon: LifeBuoy, label: "Help & Guide", highlight: true },
   { seg: "", icon: LayoutDashboard, label: "Dashboard", end: true },
   { seg: "bookings", icon: CalendarDays, label: "Bookings" },
   { seg: "customers", icon: Contact, label: "Customers" },
@@ -18,7 +19,6 @@ const NAV = [
   { seg: "admins", icon: Users, label: "Admins", superadmin: true },
   { seg: "settings", icon: Cog, label: "Settings", superadmin: true },
   { seg: "account", icon: UserCircle, label: "My Account" },
-  { seg: "help", icon: LifeBuoy, label: "Help & Guide" },
 ];
 
 function LockScreen({ status, brand }) {
@@ -75,14 +75,26 @@ export default function AdminLayout() {
         </div>
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {items.map((n) => (
-            <NavLink key={n.seg} to={`${base}/${n.seg}`.replace(/\/$/, "")} end={n.end} data-testid={`nav-${n.label.toLowerCase().replace(/\s/g, "-")}`}
-              className="flex items-center gap-3 px-4 py-3 font-sans-j text-sm transition-colors"
-              style={({ isActive }) => ({
-                background: isActive ? "var(--charcoal)" : "transparent",
-                color: isActive ? "var(--ivory)" : "var(--ink)",
-              })}>
-              <n.icon size={17} /> {n.label}
-            </NavLink>
+            <React.Fragment key={n.seg || "dashboard"}>
+              <NavLink to={`${base}/${n.seg}`.replace(/\/$/, "")} end={n.end} data-testid={`nav-${n.label.toLowerCase().replace(/\s/g, "-")}`}
+                className="flex items-center gap-3 px-4 py-3 font-sans-j text-sm transition-colors"
+                style={({ isActive }) => (
+                  n.highlight
+                    ? {
+                        background: isActive ? "var(--gold)" : "var(--champagne)",
+                        color: isActive ? "#fff" : "var(--gold-deep)",
+                        border: "1px solid var(--gold)",
+                        fontWeight: 600,
+                      }
+                    : {
+                        background: isActive ? "var(--charcoal)" : "transparent",
+                        color: isActive ? "var(--ivory)" : "var(--ink)",
+                      }
+                )}>
+                <n.icon size={17} /> {n.label}
+              </NavLink>
+              {n.highlight && <div className="my-2 border-b" style={{ borderColor: "var(--line)" }} />}
+            </React.Fragment>
           ))}
         </nav>
         <div className="p-4 border-t" style={{ borderColor: "var(--line)" }}>
