@@ -3,10 +3,12 @@ import { toast } from "sonner";
 import { Upload } from "lucide-react";
 import api, { apiErr } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useTenant } from "@/context/TenantContext";
 import { PageHead, Panel, Field } from "@/components/admin/ui";
 
 export default function Branding() {
   const { refresh } = useAuth();
+  const tctx = useTenant();
   const [b, setB] = useState(null);
 
   useEffect(() => { api.get("/branding").then((r) => setB(r.data)).catch((e) => toast.error(apiErr(e))); }, []);
@@ -27,6 +29,7 @@ export default function Branding() {
       await api.put("/branding", b);
       toast.success("Branding saved");
       await refresh();
+      if (tctx?.reload) await tctx.reload();
       // apply colours live
       document.documentElement.style.setProperty("--gold", b.primary_color);
       document.documentElement.style.setProperty("--gold-deep", b.accent_color);
@@ -50,10 +53,6 @@ export default function Branding() {
             <Field label="Tagline">
               <input className="input-wtb" value={b.tagline || ""} data-testid="brand-tagline"
                 onChange={(e) => set({ tagline: e.target.value })} placeholder="Bridal Appointments" />
-            </Field>
-            <Field label="Footer Credit">
-              <input className="input-wtb" value={b.footer_credit || ""} data-testid="brand-footer"
-                onChange={(e) => set({ footer_credit: e.target.value })} placeholder="Designed & Hosted by IvoryDigital" />
             </Field>
             <div>
               <p className="field-label mb-2">Logo</p>

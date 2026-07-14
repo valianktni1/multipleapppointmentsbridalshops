@@ -1993,9 +1993,11 @@ async def put_branding(body: BrandingIn, user: dict = Depends(require_company_su
     tenant = await db.tenants.find_one({"_id": oid(user["tenant_id"])})
     b = tenant.get("branding", {}) or {}
     incoming = {k: v for k, v in body.model_dump().items() if v is not None}
+    incoming.pop("footer_credit", None)  # platform-controlled; tenants cannot change the credit
     if incoming.get("logo_data") and len(incoming["logo_data"]) > 3_000_000:
         raise HTTPException(status_code=400, detail="Logo is too large (max ~2MB). Please upload a smaller image.")
     b.update(incoming)
+    b["footer_credit"] = DEFAULT_FOOTER_CREDIT  # always enforce platform credit
     await db.tenants.update_one({"_id": tenant["_id"]}, {"$set": {"branding": b, "name": b.get("brand_name") or tenant.get("name")}})
     fresh = await db.tenants.find_one({"_id": tenant["_id"]})
     return tenant_public(fresh)["branding"]
