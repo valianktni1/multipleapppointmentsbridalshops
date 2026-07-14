@@ -941,6 +941,87 @@ async def platform_delete_tenant(tenant_id: str, user: dict = Depends(get_curren
     return {"ok": True}
 
 
+# ---- platform email (SMTP) settings ----
+PLATFORM_EMAIL_DEFAULTS = {
+    "smtp_host": "", "smtp_port": 465, "sender_email": "", "smtp_password": "", "sender_name": "",
+}
+
+
+async def get_platform_email() -> dict:
+    s = await db.platform_settings.find_one({"key": "email"})
+    if not s:
+        s = {"key": "email", **PLATFORM_EMAIL_DEFAULTS}
+        await db.platform_settings.insert_one(s)
+    for k, v in PLATFORM_EMAIL_DEFAULTS.items():
+        s.setdefault(k, v)
+    return s
+
+
+class EmailSettingsIn(BaseModel):
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    sender_email: Optional[EmailStr] = None
+    smtp_password: Optional[str] = None
+    sender_name: Optional[str] = None
+
+
+def _cfg_from_email_doc(s: dict, brand: str) -> Optional[dict]:
+    if s and s.get("smtp_host") and s.get("sender_email"):
+        return {
+            "smtp_host": (s.get("smtp_host") or "").strip(),
+            "smtp_port": s.get("smtp_port", 465),
+            "smtp_user": (s.get("sender_email") or "").strip(),  # Hostinger-style: email = username
+            "smtp_password": s.get("smtp_password"),
+            "from_addr": s.get("sender_email"),
+            "from_name": s.get("sender_name") or brand,
+        }
+    return None
+
+
+@api.get("/platform/email-settings")
+async def platform_get_email(user: dict = Depends(get_current_platform)):
+    s = await get_platform_email()
+    return {
+        "smtp_host": s.get("smtp_host", ""),
+        "smtp_port": s.get("smtp_port", 465),
+        "sender_email": s.get("sender_email", ""),
+        "sender_name": s.get("sender_name", ""),
+        "smtp_password": "********" if s.get("smtp_password") else "",
+    }
+
+
+@api.put("/platform/email-settings")
+async def platform_put_email(body: EmailSettingsIn, user: dict = Depends(get_current_platform)):
+    update = {k: v for k, v in body.model_dump().items() if v is not None}
+    if update.get("smtp_password") == "********":
+        update.pop("smtp_password")
+    if "sender_email" in update:
+        update["sender_email"] = update["sender_email"].lower().strip()
+    await db.platform_settings.update_one({"key": "email"}, {"$set": {**update, "key": "email"}}, upsert=True)
+    return {"ok": True}
+
+
+@api.post("/platform/email-settings/test")
+async def platform_test_email(body: TestEmailIn, user: dict = Depends(get_current_platform)):
+    s = await get_platform_email()
+    brand = os.environ.get("PLATFORM_SUPERADMIN_NAME", "Ivory Digital")
+    cfg = _cfg_from_email_doc(s, brand)
+    if not cfg:
+        raise HTTPException(status_code=400, detail="Please enter your SMTP server and email address first")
+    fake_tenant = {"_id": "platform", "name": brand, "branding": {"brand_name": brand, "tagline": "Platform", "primary_color": "#B0904F"}}
+    html = render_email(fake_tenant, "Your email is working",
+                        [f"This is a test email from your {brand} platform account (<strong>{cfg['from_addr']}</strong>).",
+                         "If you can see this, your outgoing email is configured correctly."])
+    try:
+        await asyncio.to_thread(_smtp_send, cfg, body.to, f"{brand} — test email",
+                                f"Test email from your {brand} platform account ({cfg['from_addr']}).",
+                                html, None, True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not send: {e}")
+    return {"ok": True}
+
+
+
 # =================================================================== TENANT CONTEXT (public)
 @api.get("/tenant/context")
 async def tenant_context(request: Request):

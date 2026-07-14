@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { LogOut, Plus, ExternalLink, Trash2, Clock, CheckCircle2, PauseCircle, KeyRound, LogIn } from "lucide-react";
+import { LogOut, Plus, ExternalLink, Trash2, Clock, CheckCircle2, PauseCircle, KeyRound, LogIn, Mail } from "lucide-react";
 import api, { apiErr } from "@/lib/api";
 import { usePlatformAuth } from "@/context/PlatformAuthContext";
 import { useAuth } from "@/context/AuthContext";
 import { Modal, Field } from "@/components/admin/ui";
+import EmailSettingsForm from "@/components/admin/EmailSettingsForm";
 
 const STATUS = {
   trial: { bg: "var(--champagne)", c: "var(--gold-deep)", label: "trial" },
@@ -39,6 +40,7 @@ export default function PlatformDashboard() {
   const [busy, setBusy] = useState(false);
   const [pwFor, setPwFor] = useState(null);
   const [newPw, setNewPw] = useState("");
+  const [emailOpen, setEmailOpen] = useState(false);
 
   const origin = window.location.origin;
 
@@ -105,6 +107,10 @@ export default function PlatformDashboard() {
         </div>
         <div className="flex items-center gap-4">
           <span className="font-sans-j text-sm hidden sm:inline" style={{ color: "var(--taupe)" }}>{user?.email}</span>
+          <button onClick={() => setEmailOpen(true)} data-testid="platform-email-settings-btn"
+            className="flex items-center gap-2 font-sans-j text-sm hover:text-[var(--gold-deep)]" style={{ color: "var(--taupe)" }}>
+            <Mail size={16} /> Email Settings
+          </button>
           <button onClick={() => { logout(); nav("/superadmin"); }} data-testid="platform-logout"
             className="flex items-center gap-2 font-sans-j text-sm hover:text-[var(--gold-deep)]" style={{ color: "var(--taupe)" }}>
             <LogOut size={16} /> Sign Out
@@ -223,6 +229,15 @@ export default function PlatformDashboard() {
           <Field label="New Password"><input className="input-wtb" value={newPw} data-testid="reset-pw-input" onChange={(e) => setNewPw(e.target.value)} placeholder="min 6 characters" /></Field>
           <button className="btn-wtb btn-gold w-full" onClick={doResetPw} data-testid="reset-pw-submit">Reset Password</button>
         </div>
+      </Modal>
+
+      <Modal open={emailOpen} onClose={() => setEmailOpen(false)} title="Platform Email Settings" testid="platform-email-modal">
+        <EmailSettingsForm
+          getUrl="/platform/email-settings"
+          putUrl="/platform/email-settings"
+          testUrl="/platform/email-settings/test"
+          help="Configure the platform's own outgoing email (used for platform notices). Each company sets its own email separately."
+        />
       </Modal>
     </div>
   );

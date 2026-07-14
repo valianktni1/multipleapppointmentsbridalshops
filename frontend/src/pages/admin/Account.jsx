@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import api, { apiErr } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHead, Panel, Field, Toggle } from "@/components/admin/ui";
+import EmailSettingsForm from "@/components/admin/EmailSettingsForm";
 
 export default function Account() {
   const { user, refresh } = useAuth();
@@ -10,27 +11,10 @@ export default function Account() {
   const [pw, setPw] = useState({ current_password: "", new_password: "", confirm: "" });
   const [tfa, setTfa] = useState(null); // {secret, qr}
   const [code, setCode] = useState("");
-  const [email, setEmail] = useState(null);
-  const [testTo, setTestTo] = useState("");
 
   React.useEffect(() => {
     if (user) setProfile({ name: user.name || "", email: user.email || "" });
   }, [user]);
-
-  React.useEffect(() => {
-    api.get("/auth/my-email-settings").then((r) => { setEmail(r.data); setTestTo(r.data.sender_email || ""); }).catch(() => {});
-  }, []);
-
-  const saveEmail = async () => {
-    try { await api.put("/auth/my-email-settings", email); toast.success("Email settings saved"); }
-    catch (e) { toast.error(apiErr(e)); }
-  };
-
-  const sendTest = async () => {
-    if (!testTo) { toast.error("Enter an address to send the test to"); return; }
-    try { await api.post("/auth/my-email-settings/test", { to: testTo }); toast.success("Test email sent — check the inbox"); }
-    catch (e) { toast.error(apiErr(e)); }
-  };
 
   const saveProfile = async () => {
     if (!profile.name || !profile.email) { toast.error("Name and email are required"); return; }
@@ -123,54 +107,11 @@ export default function Account() {
       </div>
 
       <Panel className="mt-6">
-        <h3 className="text-2xl mb-1">Email / SMTP Settings</h3>
-        <p className="font-sans-j text-sm mb-6" style={{ color: "var(--taupe)" }}>
-          Set up your own outgoing email so the app can send confirmations, reminders and replies from your mailbox.
-          For Gmail/Outlook use an <b>app password</b>, not your normal login password.
-        </p>
-        {!email ? <p className="eyebrow">Loading…</p> : (
-          <div className="space-y-5">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Sender Name (shown to customers)">
-                <input className="input-wtb" value={email.sender_name || ""} data-testid="smtp-sender-name"
-                  onChange={(e) => setEmail({ ...email, sender_name: e.target.value })} placeholder="Wife To Be" />
-              </Field>
-              <Field label="Sender Email (from address)">
-                <input className="input-wtb" type="email" value={email.sender_email || ""} data-testid="smtp-sender-email"
-                  onChange={(e) => setEmail({ ...email, sender_email: e.target.value })} placeholder="you@wifetobe.co.uk" />
-              </Field>
-            </div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="SMTP Host">
-                <input className="input-wtb" value={email.smtp_host || ""} data-testid="smtp-host"
-                  onChange={(e) => setEmail({ ...email, smtp_host: e.target.value })} placeholder="smtp.gmail.com" />
-              </Field>
-              <Field label="SMTP Port">
-                <input className="input-wtb" type="number" value={email.smtp_port || 587} data-testid="smtp-port"
-                  onChange={(e) => setEmail({ ...email, smtp_port: Number(e.target.value) })} placeholder="587" />
-              </Field>
-            </div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="SMTP Username">
-                <input className="input-wtb" value={email.smtp_user || ""} data-testid="smtp-user"
-                  onChange={(e) => setEmail({ ...email, smtp_user: e.target.value })} placeholder="leave blank to use your sender email" />
-              </Field>
-              <Field label="SMTP Password / App Password">
-                <input className="input-wtb" type="password" value={email.smtp_password || ""} data-testid="smtp-password"
-                  onChange={(e) => setEmail({ ...email, smtp_password: e.target.value })} placeholder="••••••••" />
-              </Field>
-            </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 border-t pt-5" style={{ borderColor: "var(--line)" }}>
-              <button className="btn-wtb btn-gold" onClick={saveEmail} data-testid="save-smtp">Save Email Settings</button>
-              <div className="flex-1" />
-              <Field label="Send a test to">
-                <input className="input-wtb" type="email" value={testTo} data-testid="smtp-test-to"
-                  onChange={(e) => setTestTo(e.target.value)} placeholder="test@email.com" />
-              </Field>
-              <button className="btn-wtb btn-ghost-wtb" onClick={sendTest} data-testid="send-test-email">Send Test</button>
-            </div>
-          </div>
-        )}
+        <EmailSettingsForm
+          getUrl="/auth/my-email-settings"
+          putUrl="/auth/my-email-settings"
+          testUrl="/auth/my-email-settings/test"
+        />
       </Panel>
     </div>
   );
