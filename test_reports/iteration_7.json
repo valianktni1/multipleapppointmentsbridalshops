@@ -1,0 +1,50 @@
+{
+  "summary": "Completed comprehensive testing of max_locations (shop allowance cap) feature. All backend enforcement, platform dashboard UI, and tenant locations page UI tests passed. Regression tests (shop editing, public booking, isolation) also passed.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "BACKEND: Create tenant with locations=1 -> max_locations=1, seeds 1 shop",
+    "BACKEND: POST /api/shops at cap -> 403 with correct error message",
+    "BACKEND: PATCH /platform/tenants/{id} max_locations=2 -> 200, allowance updated",
+    "BACKEND: POST /api/shops after raising cap -> 200, 2nd shop created",
+    "BACKEND: POST /api/shops at cap of 2 -> 403 with correct error message",
+    "BACKEND: PATCH max_locations=1 when tenant has 2 shops -> 400 with correct error",
+    "BACKEND: max_locations validation (0 and 51) -> 400",
+    "BACKEND: Create tenant with locations=2 -> seeds 2 shops with availability + appointment types",
+    "BACKEND: superbrides tenant is at 2/2 cap",
+    "FRONTEND PLATFORM: Table header shows 'Shops (used/max)'",
+    "FRONTEND PLATFORM: superbrides row shows '2 / 2' in clickable allowance cell",
+    "FRONTEND PLATFORM: Clicking allowance cell opens 'Shop Allowance' modal",
+    "FRONTEND PLATFORM: Modal has input field and Save button",
+    "FRONTEND PLATFORM: New Company modal has 'Shops Allowed (max)' field with data-testid='init-locations'",
+    "FRONTEND TENANT: superbrides at cap - Add Location button is DISABLED",
+    "FRONTEND TENANT: Limit notice shown: 'You've reached your plan's limit of 2 shops. Contact us to add more.'",
+    "FRONTEND TENANT: Shop allowance badge shows '2 of 2 shops used'",
+    "FRONTEND TENANT: 2 location cards displayed",
+    "REGRESSION: Shop edit (PATCH /api/shops/{id}) works correctly",
+    "REGRESSION: Public booking page lists both boutiques",
+    "REGRESSION: Isolation tests passed (35/35)"
+  ],
+  "test_report_links": [
+    "/app/tests/max_locations_test.py"
+  ],
+  "success_percentage": {
+    "backend": "100% (28/28 tests passed)",
+    "frontend_platform": "100% (all UI elements present and functional)",
+    "frontend_tenant": "100% (all UI elements present and functional)",
+    "regression": "100% (shop edit, public booking, isolation tests passed)"
+  },
+  "action_item_for_main_agent": "",
+  "updated_files": [
+    "/app/tests/max_locations_test.py"
+  ],
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}

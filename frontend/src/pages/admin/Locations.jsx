@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Plus, Trash2, MapPin, Phone, Mail, Pencil } from "lucide-react";
 import api, { apiErr } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import { PageHead, Panel, Field, Modal } from "@/components/admin/ui";
 
 const BLANK = { name: "", role_label: "Wedding Dresses", address: "", phone: "", email: "", blurb: "", hours_text: "" };
@@ -31,11 +32,14 @@ function LocationFields({ form, setForm }) {
 }
 
 export default function Locations() {
+  const { user } = useAuth();
+  const maxLocations = user?.tenant?.max_locations ?? 1;
   const [shops, setShops] = useState([]);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(null); // shop object being edited
   const [form, setForm] = useState(BLANK);
   const [busy, setBusy] = useState(false);
+  const atLimit = shops.length >= maxLocations;
 
   const load = () => api.get("/shops").then((r) => setShops(r.data)).catch((e) => toast.error(apiErr(e)));
   useEffect(() => { load(); }, []);
@@ -76,12 +80,29 @@ export default function Locations() {
   return (
     <div className="reveal-up">
       <PageHead eyebrow="Boutiques" title="Locations">
-        <button className="btn-wtb btn-gold" onClick={() => { setForm(BLANK); setCreating(true); }} data-testid="add-location"><Plus size={15} className="mr-2" /> Add Location</button>
+        <button className="btn-wtb btn-gold" onClick={() => { setForm(BLANK); setCreating(true); }} data-testid="add-location" disabled={atLimit}>
+          <Plus size={15} className="mr-2" /> Add Location
+        </button>
       </PageHead>
 
-      <p className="font-sans-j text-sm mb-6 -mt-4" style={{ color: "var(--taupe)" }}>
-        These are the shops your clients choose from on your booking page. Add all of your boutiques with their names and addresses.
-      </p>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-6 -mt-4">
+        <p className="font-sans-j text-sm" style={{ color: "var(--taupe)" }}>
+          These are the shops your clients choose from on your booking page. Add all of your boutiques with their names and addresses.
+        </p>
+        <span className="eyebrow px-3 py-1" style={{ fontSize: "0.55rem", background: "var(--ivory-2)", color: "var(--gold-deep)" }} data-testid="shop-allowance">
+          {shops.length} of {maxLocations} shop{maxLocations !== 1 ? "s" : ""} used
+        </span>
+      </div>
+
+      {atLimit && (
+        <div className="mb-6 flex items-center gap-3 px-5 py-3 border" data-testid="limit-notice"
+          style={{ background: "var(--champagne)", borderColor: "var(--gold)", color: "var(--gold-deep)" }}>
+          <MapPin size={16} />
+          <span className="font-sans-j text-sm">
+            You've reached your plan's limit of {maxLocations} shop{maxLocations !== 1 ? "s" : ""}. Contact us to add more.
+          </span>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-6" data-testid="locations-grid">
         {shops.length === 0 && <p className="font-sans-j text-sm" style={{ color: "var(--taupe)" }}>No locations yet.</p>}

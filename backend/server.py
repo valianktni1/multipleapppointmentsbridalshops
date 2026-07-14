@@ -175,6 +175,7 @@ def tenant_public(tenant: dict) -> dict:
         "plan": tenant.get("plan", "trial"),
         "trial_days_remaining": trial_days_remaining(tenant),
         "trial_ends_at": tenant.get("trial_ends_at"),
+        "max_locations": int(tenant.get("max_locations") or 1),
         "branding": {
             "brand_name": b.get("brand_name") or tenant.get("name", ""),
             "logo_url": b.get("logo_url", ""),
@@ -702,6 +703,7 @@ class TenantUpdateIn(BaseModel):
     name: Optional[str] = None
     custom_domain: Optional[str] = None
     status: Optional[str] = None
+    max_locations: Optional[int] = None
 
 
 class ExtendTrialIn(BaseModel):
@@ -811,6 +813,7 @@ async def platform_create_tenant(body: TenantCreateIn, user: dict = Depends(get_
             "footer_credit": DEFAULT_FOOTER_CREDIT,
         },
         "created_at": started.isoformat(),
+        "max_locations": max(1, min(50, int(body.locations or 1))),
     }
     res = await db.tenants.insert_one(tenant_doc)
     tenant_id = str(res.inserted_id)
@@ -832,7 +835,7 @@ async def platform_create_tenant(body: TenantCreateIn, user: dict = Depends(get_
             "created_at": started.isoformat(),
         })
 
-    await _seed_tenant(tenant_id, max(1, min(10, body.locations)))
+    await _seed_tenant(tenant_id, max(1, min(50, body.locations)))
     fresh = await db.tenants.find_one({"_id": res.inserted_id})
     return await _tenant_overview(fresh)
 
@@ -853,6 +856,13 @@ async def platform_update_tenant(tenant_id: str, body: TenantUpdateIn, user: dic
         update["status"] = body.status
         if body.status == "active":
             update["plan"] = "active"
+    if body.max_locations is not None:
+        if not (1 <= body.max_locations <= 50):
+            raise HTTPException(status_code=400, detail="Shop allowance must be between 1 and 50")
+        current = await db.shops.count_documents({"tenant_id": str(t["_id"])})
+        if body.max_locations < current:
+            raise HTTPException(status_code=400, detail=f"This company already has {current} shops. Delete some first or set the allowance to at least {current}.")
+        update["max_locations"] = body.max_locations
     if update:
         await db.tenants.update_one({"_id": t["_id"]}, {"$set": update})
     fresh = await db.tenants.find_one({"_id": t["_id"]})
@@ -1256,6 +1266,11 @@ async def get_shop(shop_id: str, request: Request):
 async def create_shop(body: ShopCreateIn, user: dict = Depends(require_tenant_write)):
     tenant_id = user["tenant_id"]
     count = await db.shops.count_documents({"tenant_id": tenant_id})
+    tenant = await db.tenants.find_one({"_id": oid(tenant_id)})
+    max_locations = int((tenant or {}).get("max_locations") or 1)
+    if count >= max_locations:
+        raise HTTPException(status_code=403,
+                            detail=f"Your plan includes {max_locations} shop{'s' if max_locations != 1 else ''}. Contact us to add more.")
     doc = {
         "tenant_id": tenant_id,
         "name": body.name.strip(),
@@ -2205,6 +2220,11 @@ async def seed():
     await db.appointment_types.create_index([("tenant_id", 1), ("shop_id", 1)])
     await db.availability.create_index([("tenant_id", 1), ("shop_id", 1)])
     await db.settings.create_index("tenant_id", unique=True)
+
+    # Migration: ensure every tenant has a shop allowance (default = current shop count)
+    async for t in db.tenants.find({"max_locations": {"$exists": False}}):
+        cnt = await db.shops.count_documents({"tenant_id": str(t["_id"])})
+        await db.tenants.update_one({"_id": t["_id"]}, {"$set": {"max_locations": max(1, cnt)}})
 
     email = os.environ["PLATFORM_SUPERADMIN_EMAIL"].lower()
     existing = await db.platform_users.find_one({"email": email})

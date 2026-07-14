@@ -41,6 +41,8 @@ export default function PlatformDashboard() {
   const [pwFor, setPwFor] = useState(null);
   const [newPw, setNewPw] = useState("");
   const [emailOpen, setEmailOpen] = useState(false);
+  const [allowFor, setAllowFor] = useState(null);
+  const [allowVal, setAllowVal] = useState(1);
 
   const origin = window.location.origin;
 
@@ -98,6 +100,14 @@ export default function PlatformDashboard() {
     catch (e) { toast.error(apiErr(e)); }
   };
 
+  const saveAllowance = async () => {
+    try {
+      await api.patch(`/platform/tenants/${allowFor.id}`, { max_locations: Number(allowVal) });
+      toast.success("Shop allowance updated");
+      setAllowFor(null); load();
+    } catch (e) { toast.error(apiErr(e)); }
+  };
+
   return (
     <div className="min-h-screen" style={{ background: "var(--ivory)" }}>
       <header className="w-full py-5 px-6 md:px-10 flex items-center justify-between border-b" style={{ borderColor: "var(--line)", background: "#fff" }}>
@@ -143,7 +153,7 @@ export default function PlatformDashboard() {
           <table className="w-full text-sm font-sans-j">
             <thead>
               <tr className="text-left" style={{ background: "var(--ivory-2)" }}>
-                {["Company", "URL", "Status", "Trial", "Locations", "Bookings", "Actions"].map((h) => (
+                {["Company", "URL", "Status", "Trial", "Shops (used/max)", "Bookings", "Actions"].map((h) => (
                   <th key={h} className="field-label p-4 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -164,7 +174,13 @@ export default function PlatformDashboard() {
                   </td>
                   <td className="p-4"><Pill status={t.status} /></td>
                   <td className="p-4 whitespace-nowrap">{t.status === "trial" ? `${t.trial_days_remaining ?? 0} days left` : "\u2014"}</td>
-                  <td className="p-4 text-center">{t.locations_count}</td>
+                  <td className="p-4 text-center">
+                    <button onClick={() => { setAllowFor(t); setAllowVal(t.max_locations || 1); }} data-testid={`allowance-${t.slug}`}
+                      className="hover:text-[var(--gold-deep)] underline decoration-dotted underline-offset-4" style={{ color: "var(--charcoal)" }}
+                      title="Click to change shop allowance">
+                      {t.locations_count} / {t.max_locations ?? 1}
+                    </button>
+                  </td>
                   <td className="p-4 text-center">{t.bookings_count}</td>
                   <td className="p-4">
                     <div className="flex flex-wrap gap-2">
@@ -216,9 +232,10 @@ export default function PlatformDashboard() {
           <div className="grid grid-cols-2 gap-4">
             <Field label="Trial Length (days)"><input type="number" min={1} className="input-wtb" value={form.trial_days} data-testid="trial-days"
               onChange={(e) => setForm({ ...form, trial_days: Number(e.target.value) })} /></Field>
-            <Field label="Initial Locations"><input type="number" min={1} max={10} className="input-wtb" value={form.locations} data-testid="init-locations"
+            <Field label="Shops Allowed (max)"><input type="number" min={1} max={50} className="input-wtb" value={form.locations} data-testid="init-locations"
               onChange={(e) => setForm({ ...form, locations: Number(e.target.value) })} /></Field>
           </div>
+          <p className="font-sans-j text-xs -mt-2" style={{ color: "var(--taupe)" }}>This is both the number of shops created now and the maximum they can add. Choose 1 to lock them to a single shop.</p>
           <button className="btn-wtb btn-gold w-full" onClick={create} disabled={busy} data-testid="create-company-submit">{busy ? "Creating\u2026" : "Create Company"}</button>
         </div>
       </Modal>
@@ -228,6 +245,20 @@ export default function PlatformDashboard() {
           <p className="font-sans-j text-sm" style={{ color: "var(--taupe)" }}>Set a new password for the owner of <b>{pwFor?.name}</b> ({pwFor?.owner_email}).</p>
           <Field label="New Password"><input className="input-wtb" value={newPw} data-testid="reset-pw-input" onChange={(e) => setNewPw(e.target.value)} placeholder="min 6 characters" /></Field>
           <button className="btn-wtb btn-gold w-full" onClick={doResetPw} data-testid="reset-pw-submit">Reset Password</button>
+        </div>
+      </Modal>
+
+      <Modal open={!!allowFor} onClose={() => setAllowFor(null)} title="Shop Allowance" testid="allowance-modal">
+        <div className="space-y-4">
+          <p className="font-sans-j text-sm" style={{ color: "var(--taupe)" }}>
+            Set how many shops <b>{allowFor?.name}</b> may have. They currently use <b>{allowFor?.locations_count}</b>.
+            They can add shops up to this number on their Locations page.
+          </p>
+          <Field label="Maximum Shops">
+            <input type="number" min={allowFor?.locations_count || 1} max={50} className="input-wtb" value={allowVal}
+              data-testid="allowance-input" onChange={(e) => setAllowVal(e.target.value)} />
+          </Field>
+          <button className="btn-wtb btn-gold w-full" onClick={saveAllowance} data-testid="allowance-submit">Save Allowance</button>
         </div>
       </Modal>
 
