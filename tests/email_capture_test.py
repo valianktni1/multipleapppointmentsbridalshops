@@ -4,9 +4,15 @@ import threading
 import requests
 from datetime import date, timedelta
 from aiosmtpd.controller import Controller
+from aiosmtpd.smtp import AuthResult
 
 B = "http://localhost:8001/api"
 CAPTURED = []
+
+
+def authenticator(server, session, envelope, mechanism, auth_data):
+    # Accept any auth for this test (we're just checking emails are sent in background)
+    return AuthResult(success=True)
 
 
 class Handler:
@@ -46,7 +52,8 @@ def book(slug):
 
 
 def main():
-    controller = Controller(Handler(), hostname="127.0.0.1", port=8025)
+    controller = Controller(Handler(), hostname="127.0.0.1", port=8025,
+                            authenticator=authenticator, auth_required=True, auth_require_tls=False)
     controller.start()
     try:
         tok = requests.post(f"{B}/platform/login", json={"email": "admin@ivory-digital.uk", "password": "IvoryAdmin2025!"}).json()["access_token"]

@@ -362,12 +362,18 @@ def render_email(tenant: dict, heading: str, paragraphs: List[str], cta: Optiona
 </table></td></tr></table></body></html>"""
 
 
-def _smtp_send(cfg: dict, to: str, subject: str, body: str, html: Optional[str] = None, logo: Optional[bytes] = None) -> bool:
+def _smtp_send(cfg: dict, to: str, subject: str, body: str, html: Optional[str] = None,
+               logo: Optional[bytes] = None, raise_on_error: bool = False) -> bool:
     if not cfg or not cfg.get("smtp_host") or not cfg.get("from_addr"):
         logger.info("Email skipped (SMTP not configured): %s -> %s", subject, to)
+        if raise_on_error:
+            raise RuntimeError("SMTP is not configured — please enter your host, sender email, username and password.")
         return False
-    host = cfg["smtp_host"]
+    host = (cfg["smtp_host"] or "").strip()
     port = int(cfg.get("smtp_port", 587) or 587)
+    user = (cfg.get("smtp_user") or "").strip()
+    # App passwords (Gmail/Outlook) are often pasted with spaces; those spaces are not part of the key.
+    pwd = (cfg.get("smtp_password") or "").replace(" ", "")
     try:
         msg = EmailMessage()
         msg["Subject"] = subject
@@ -381,8 +387,8 @@ def _smtp_send(cfg: dict, to: str, subject: str, body: str, html: Optional[str] 
         if port == 465:
             # Implicit TLS (SSL) — used by many providers on 465.
             with smtplib.SMTP_SSL(host, port, timeout=12) as server:
-                if cfg.get("smtp_user"):
-                    server.login(cfg["smtp_user"], cfg.get("smtp_password", ""))
+                if user:
+                    server.login(user, pwd)
                 server.send_message(msg)
         else:
             # STARTTLS (587) or plain (25). Only upgrade if the server advertises it.
@@ -391,14 +397,25 @@ def _smtp_send(cfg: dict, to: str, subject: str, body: str, html: Optional[str] 
                 if server.has_extn("starttls"):
                     server.starttls()
                     server.ehlo()
-                if cfg.get("smtp_user"):
-                    server.login(cfg["smtp_user"], cfg.get("smtp_password", ""))
+                if user:
+                    server.login(user, pwd)
                 server.send_message(msg)
         logger.info("Email sent: '%s' -> %s via %s:%s", subject, to, host, port)
         return True
+    except smtplib.SMTPAuthenticationError as e:
+        detail = e.smtp_error.decode() if isinstance(getattr(e, "smtp_error", None), bytes) else str(e)
+        logger.error("Email AUTH failed (%s@%s:%s): %s", user or "<no user>", host, port, detail)
+        if raise_on_error:
+            raise RuntimeError(f"The mail server rejected the username/password (code {getattr(e, 'smtp_code', '')}). "
+                               f"Check the SMTP username is your full email and use an app password if 2FA is on. Server said: {detail}")
+        return False
     except Exception as e:
         logger.error("Email send FAILED ('%s' -> %s via %s:%s): %s", subject, to, host, port, e)
+        if raise_on_error:
+            raise RuntimeError(str(e) or "Could not connect to the mail server — check the host and port.")
         return False
+
+
 
 
 def dispatch_email(cfg: Optional[dict], to: str, subject: str, body: str, html: Optional[str] = None, logo: Optional[bytes] = None):
@@ -427,12 +444,15 @@ def dispatch_email(cfg: Optional[dict], to: str, subject: str, body: str, html: 
 
 def cfg_from_user(u: dict, brand: str) -> Optional[dict]:
     if u and u.get("smtp_host"):
+        from_addr = u.get("sender_email") or u.get("email")
         return {
-            "smtp_host": u.get("smtp_host"),
+            "smtp_host": (u.get("smtp_host") or "").strip(),
             "smtp_port": u.get("smtp_port", 587),
-            "smtp_user": u.get("smtp_user"),
+            # Fall back to the from-address if no explicit SMTP username was given
+            # (most providers use the full email address as the login username).
+            "smtp_user": (u.get("smtp_user") or from_addr or "").strip(),
             "smtp_password": u.get("smtp_password"),
-            "from_addr": u.get("sender_email") or u.get("email"),
+            "from_addr": from_addr,
             "from_name": u.get("sender_name") or brand,
         }
     return None
@@ -441,9 +461,9 @@ def cfg_from_user(u: dict, brand: str) -> Optional[dict]:
 def cfg_from_settings(s: dict, brand: str) -> Optional[dict]:
     if s and s.get("smtp_host") and s.get("business_email"):
         return {
-            "smtp_host": s.get("smtp_host"),
+            "smtp_host": (s.get("smtp_host") or "").strip(),
             "smtp_port": s.get("smtp_port", 587),
-            "smtp_user": s.get("smtp_user"),
+            "smtp_user": (s.get("smtp_user") or s.get("business_email") or "").strip(),
             "smtp_password": s.get("smtp_password"),
             "from_addr": s.get("business_email"),
             "from_name": s.get("from_name") or brand,
@@ -1020,15 +1040,17 @@ async def test_my_email_settings(body: TestEmailIn, user: dict = Depends(get_cur
     cfg = cfg_from_user(u, brand)
     if not cfg:
         raise HTTPException(status_code=400, detail="Please save your SMTP host and details first")
-    ok = await asyncio.to_thread(
-        _smtp_send, cfg, body.to, f"{brand} — test email",
-        f"This is a test email sent from your {brand} account ({cfg['from_addr']}).",
-        render_email(tenant, "Your email is working",
-                     [f"This is a test email sent from your {brand} account (<strong>{cfg['from_addr']}</strong>).",
-                      "If you can see this beautifully formatted message, your outgoing email is configured correctly."]),
-        _logo_bytes(tenant))
-    if not ok:
-        raise HTTPException(status_code=400, detail="Could not send — please check your SMTP host, port, username and password")
+    html = render_email(tenant, "Your email is working",
+                        [f"This is a test email sent from your {brand} account (<strong>{cfg['from_addr']}</strong>).",
+                         "If you can see this beautifully formatted message, your outgoing email is configured correctly."])
+    logo = _logo_bytes(tenant)
+    try:
+        await asyncio.to_thread(
+            _smtp_send, cfg, body.to, f"{brand} — test email",
+            f"This is a test email sent from your {brand} account ({cfg['from_addr']}).",
+            html, logo, True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not send: {e}")
     return {"ok": True}
 
 

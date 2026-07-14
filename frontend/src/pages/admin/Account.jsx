@@ -153,7 +153,7 @@ export default function Account() {
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="SMTP Username">
                 <input className="input-wtb" value={email.smtp_user || ""} data-testid="smtp-user"
-                  onChange={(e) => setEmail({ ...email, smtp_user: e.target.value })} placeholder="usually your email" />
+                  onChange={(e) => setEmail({ ...email, smtp_user: e.target.value })} placeholder="leave blank to use your sender email" />
               </Field>
               <Field label="SMTP Password / App Password">
                 <input className="input-wtb" type="password" value={email.smtp_password || ""} data-testid="smtp-password"

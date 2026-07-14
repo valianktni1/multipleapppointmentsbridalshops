@@ -27,7 +27,7 @@ export function DesignerCredit({ dark = false }) {
   return (
     <div className="w-full text-center py-4" data-testid="designer-credit"
       style={{ borderTop: `1px solid ${dark ? "rgba(255,255,255,.15)" : "var(--line)"}` }}>
-      <a href="https://ivorydigital.uk" target="_blank" rel="noreferrer" data-testid="designer-credit-link"
+      <a href="https://ivory-digital.uk" target="_blank" rel="noreferrer" data-testid="designer-credit-link"
         className="eyebrow hover:opacity-70 transition-opacity"
         style={{ fontSize: "0.5rem", letterSpacing: "0.28em", color: dark ? "rgba(255,255,255,.8)" : "var(--taupe)" }}>
         {credit}
