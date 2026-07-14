@@ -1,0 +1,50 @@
+{
+  "summary": "Verified email bug fixes: (1) POST /api/public/bookings now returns in <1s even with unreachable SMTP (previously 12-15s hang), (2) emails are genuinely sent when SMTP is valid (verified via local SMTP capture). All regression tests passed.",
+  
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": [],
+    "notes": "All backend endpoints working correctly. Email dispatch is now non-blocking via asyncio.to_thread."
+  },
+  
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "notes": "Frontend testing skipped as requested (backend-only testing)"
+  },
+  
+  "passed_tests": [
+    "email_capture_test.py: Working SMTP - emails sent to customer & shop, booking completed in 0.0s",
+    "email_capture_test.py: Unreachable SMTP (10.255.255.1:587) - booking completed in 0.0s (non-blocking)",
+    "poc_isolation.py: 35 tenant isolation tests passed",
+    "backend_test.py: Normal booking without SMTP - fast (0.0s)",
+    "backend_test.py: GET booking by reference - works",
+    "backend_test.py: Reschedule booking - works",
+    "backend_test.py: Cancel booking - works",
+    "backend_test.py: Admin confirm endpoint - fast (0.0s)",
+    "backend_test.py: Test-email without SMTP - returns 400 with clear error",
+    "backend_test.py: Test-email with unreachable SMTP - fails gracefully (12s timeout, no hang)",
+    "backend_test.py: Booking with unreachable SMTP + notifications enabled - 0.0s (NON-BLOCKING)"
+  ],
+  
+  "test_report_links": [
+    "/app/tests/email_capture_test.py",
+    "/app/tests/poc_isolation.py",
+    "/app/tests/backend_test.py"
+  ],
+  
+  "success_percentage": {
+    "backend": "100% (56/56 tests passed)",
+    "frontend": "N/A (skipped as requested)"
+  },
+  
+  "action_item_for_main_agent": "",
+  
+  "updated_files": [
+    "/app/tests/backend_test.py"
+  ],
+  
+  "should_call_test_agent_after_fix": "false",
+  "should_main_agent_test_itself": "false"
+}

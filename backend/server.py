@@ -366,6 +366,8 @@ def _smtp_send(cfg: dict, to: str, subject: str, body: str, html: Optional[str] 
     if not cfg or not cfg.get("smtp_host") or not cfg.get("from_addr"):
         logger.info("Email skipped (SMTP not configured): %s -> %s", subject, to)
         return False
+    host = cfg["smtp_host"]
+    port = int(cfg.get("smtp_port", 587) or 587)
     try:
         msg = EmailMessage()
         msg["Subject"] = subject
@@ -376,15 +378,51 @@ def _smtp_send(cfg: dict, to: str, subject: str, body: str, html: Optional[str] 
             msg.add_alternative(html, subtype="html")
             if logo:
                 msg.get_payload()[1].add_related(logo, "image", "png", cid="brandlogo")
-        with smtplib.SMTP(cfg["smtp_host"], int(cfg.get("smtp_port", 587)), timeout=15) as server:
-            server.starttls()
-            if cfg.get("smtp_user"):
-                server.login(cfg["smtp_user"], cfg.get("smtp_password", ""))
-            server.send_message(msg)
+        if port == 465:
+            # Implicit TLS (SSL) — used by many providers on 465.
+            with smtplib.SMTP_SSL(host, port, timeout=12) as server:
+                if cfg.get("smtp_user"):
+                    server.login(cfg["smtp_user"], cfg.get("smtp_password", ""))
+                server.send_message(msg)
+        else:
+            # STARTTLS (587) or plain (25). Only upgrade if the server advertises it.
+            with smtplib.SMTP(host, port, timeout=12) as server:
+                server.ehlo()
+                if server.has_extn("starttls"):
+                    server.starttls()
+                    server.ehlo()
+                if cfg.get("smtp_user"):
+                    server.login(cfg["smtp_user"], cfg.get("smtp_password", ""))
+                server.send_message(msg)
+        logger.info("Email sent: '%s' -> %s via %s:%s", subject, to, host, port)
         return True
     except Exception as e:
-        logger.error("Email send failed: %s", e)
+        logger.error("Email send FAILED ('%s' -> %s via %s:%s): %s", subject, to, host, port, e)
         return False
+
+
+def dispatch_email(cfg: Optional[dict], to: str, subject: str, body: str, html: Optional[str] = None, logo: Optional[bytes] = None):
+    """Fire-and-forget email so request handlers never block on SMTP.
+
+    Runs the blocking smtplib call in a worker thread. If there is no running
+    event loop (e.g. called from a script), sends synchronously.
+    """
+    if not cfg or not to:
+        _smtp_send(cfg, to, subject, body, html, logo)
+        return
+
+    async def _runner():
+        try:
+            await asyncio.to_thread(_smtp_send, cfg, to, subject, body, html, logo)
+        except Exception as e:
+            logger.error("Background email error: %s", e)
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_runner())
+    except RuntimeError:
+        _smtp_send(cfg, to, subject, body, html, logo)
+
 
 
 def cfg_from_user(u: dict, brand: str) -> Optional[dict]:
@@ -982,12 +1020,13 @@ async def test_my_email_settings(body: TestEmailIn, user: dict = Depends(get_cur
     cfg = cfg_from_user(u, brand)
     if not cfg:
         raise HTTPException(status_code=400, detail="Please save your SMTP host and details first")
-    ok = _smtp_send(cfg, body.to, f"{brand} — test email",
-                    f"This is a test email sent from your {brand} account ({cfg['from_addr']}).",
-                    html=render_email(tenant, "Your email is working",
-                                      [f"This is a test email sent from your {brand} account (<strong>{cfg['from_addr']}</strong>).",
-                                       "If you can see this beautifully formatted message, your outgoing email is configured correctly."]),
-                    logo=_logo_bytes(tenant))
+    ok = await asyncio.to_thread(
+        _smtp_send, cfg, body.to, f"{brand} — test email",
+        f"This is a test email sent from your {brand} account ({cfg['from_addr']}).",
+        render_email(tenant, "Your email is working",
+                     [f"This is a test email sent from your {brand} account (<strong>{cfg['from_addr']}</strong>).",
+                      "If you can see this beautifully formatted message, your outgoing email is configured correctly."]),
+        _logo_bytes(tenant))
     if not ok:
         raise HTTPException(status_code=400, detail="Could not send — please check your SMTP host, port, username and password")
     return {"ok": True}
@@ -1424,7 +1463,7 @@ async def create_booking(body: BookingIn, request: Request):
     brand = brand_name_of(tenant)
     logo = _logo_bytes(tenant)
     if settings.get("notify_customer_on_booking"):
-        _smtp_send(cfg, doc["customer_email"], f"Your {brand} appointment request",
+        dispatch_email(cfg, doc["customer_email"], f"Your {brand} appointment request",
                    f"Dear {doc['customer_name']},\n\nWe have received your request for a {atype['name']} at {shop['name']} on {when}. "
                    f"Your reference is {ref}.{manage_link(settings, ref)}",
                    html=render_email(tenant, f"Thank you, {doc['customer_name'].split(' ')[0]}",
@@ -1435,7 +1474,7 @@ async def create_booking(body: BookingIn, request: Request):
                    logo=logo)
     shop_to = settings.get("business_email") or (cfg or {}).get("from_addr")
     if settings.get("notify_shop_on_booking") and shop_to:
-        _smtp_send(cfg, shop_to, f"New booking request — {shop['name']}",
+        dispatch_email(cfg, shop_to, f"New booking request — {shop['name']}",
                    f"{doc['customer_name']} ({doc['customer_email']}, {doc['customer_phone']}) requested a {atype['name']} on {when}. Ref {ref}.",
                    html=render_email(tenant, "New Booking Request",
                                      [f"<strong>{doc['customer_name']}</strong> requested a <strong>{atype['name']}</strong> at <strong>{shop['name']}</strong> on <strong>{when}</strong>.",
@@ -1522,7 +1561,7 @@ async def notify_deposit_paid(reference: str, request: Request):
     cur = settings.get("payment_currency", "GBP")
     sym = {"GBP": "£", "USD": "$", "EUR": "€"}.get(cur, "")
     if shop_to:
-        _smtp_send(cfg, shop_to, f"Deposit reported paid — {b['reference']}",
+        dispatch_email(cfg, shop_to, f"Deposit reported paid — {b['reference']}",
                    f"{b['customer_name']} reported paying their {sym}{amount:.2f} deposit for {b['appointment_type_name']} at {b['shop_name']} on {b['date']} at {b['start_time']}. Ref {b['reference']}.",
                    html=render_email(tenant, "Deposit Reported Paid",
                                      [f"<strong>{b['customer_name']}</strong> reported paying their <strong>{sym}{amount:.2f}</strong> deposit.",
@@ -1684,7 +1723,7 @@ async def update_booking(booking_id: str, body: BookingUpdateIn, user: dict = De
         if settings.get("notify_on_confirm"):
             cfg = await resolve_cfg(tenant, user)
             murl = manage_url(settings, doc["reference"])
-            _smtp_send(cfg, doc["customer_email"], f"Your {brand_name_of(tenant)} appointment is confirmed",
+            dispatch_email(cfg, doc["customer_email"], f"Your {brand_name_of(tenant)} appointment is confirmed",
                        f"Dear {doc['customer_name']},\n\nYour {doc['appointment_type_name']} at {doc['shop_name']} on "
                        f"{doc['date']} at {doc['start_time']} is now confirmed. Reference {doc['reference']}.{manage_link(settings, doc['reference'])}",
                        html=render_email(tenant, f"You're confirmed, {doc['customer_name'].split(' ')[0]}",
@@ -2033,15 +2072,16 @@ async def reminder_loop():
                         continue
                     if lo <= dt <= hi:
                         murl = manage_url(settings, b["reference"])
-                        sent = _smtp_send(cfg, b["customer_email"], f"Your {brand_name_of(tenant)} appointment is tomorrow",
-                                          f"Dear {b['customer_name']},\n\nA gentle reminder of your {b['appointment_type_name']} at {b['shop_name']} "
-                                          f"tomorrow, {b['date']} at {b['start_time']}. Reference {b['reference']}.{manage_link(settings, b['reference'])}",
-                                          html=render_email(tenant, "See you tomorrow",
-                                                            [f"Dear {b['customer_name'].split(' ')[0]}, a gentle reminder of your <strong>{b['appointment_type_name']}</strong> at <strong>{b['shop_name']}</strong> tomorrow:",
-                                                             f"<strong>{b['date']} at {b['start_time']}</strong>",
-                                                             f"Reference: <strong>{b['reference']}</strong>. We look forward to welcoming you."],
-                                                            cta={"url": murl, "label": "View My Appointment"} if murl else None),
-                                          logo=_logo_bytes(tenant))
+                        sent = await asyncio.to_thread(
+                            _smtp_send, cfg, b["customer_email"], f"Your {brand_name_of(tenant)} appointment is tomorrow",
+                            f"Dear {b['customer_name']},\n\nA gentle reminder of your {b['appointment_type_name']} at {b['shop_name']} "
+                            f"tomorrow, {b['date']} at {b['start_time']}. Reference {b['reference']}.{manage_link(settings, b['reference'])}",
+                            render_email(tenant, "See you tomorrow",
+                                         [f"Dear {b['customer_name'].split(' ')[0]}, a gentle reminder of your <strong>{b['appointment_type_name']}</strong> at <strong>{b['shop_name']}</strong> tomorrow:",
+                                          f"<strong>{b['date']} at {b['start_time']}</strong>",
+                                          f"Reference: <strong>{b['reference']}</strong>. We look forward to welcoming you."],
+                                         cta={"url": murl, "label": "View My Appointment"} if murl else None),
+                            _logo_bytes(tenant))
                         if sent:
                             await db.bookings.update_one({"_id": b["_id"]}, {"$set": {"reminder_sent": True}})
         except Exception as e:
