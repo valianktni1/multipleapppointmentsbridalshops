@@ -1,0 +1,35 @@
+{
+  "summary": "Completed comprehensive frontend testing of Help & Guide feature and SMTP Guide modal in Tenant Admin portal. All functionality verified including navigation, content rendering, modal interactions, search functionality, and critical scope check confirming SMTP guide is absent from Platform Superadmin portal.",
+  "backend_issues": {},
+  "frontend_issues": {},
+  "passed_tests": [
+    "Tenant admin login successful (owner@helpdemo.com / help123456)",
+    "Sidebar 'Help & Guide' navigation item present and functional",
+    "Help & Guide page loads at /helpdemo/admin/help with all sections",
+    "Quick Start section displays 6 setup steps",
+    "Email Setup card with 'Common SMTP Settings' button present",
+    "Feature Guide displays 7 sections (Branding, Locations, Appointments, Availability, Bookings, Customers, Customise)",
+    "FAQ accordion with 5 items expands and collapses correctly",
+    "Contact Support section present with email link",
+    "SMTP Guide modal opens from Help page button (data-testid=help-open-smtp-guide)",
+    "SMTP modal search input filters providers correctly (tested with 'yahoo')",
+    "SMTP modal shows empty state for no search results (tested with gibberish)",
+    "SMTP modal closes with Escape key",
+    "Quick help button in sidebar footer (data-testid=quick-help-btn) navigates to help page",
+    "Account page displays 'View Common SMTP Settings' button (data-testid=open-smtp-guide)",
+    "Account page displays 'Not sure? View common settings' link (data-testid=port-smtp-guide-link)",
+    "Both SMTP guide buttons on Account page open the modal successfully",
+    "SCOPE CHECK PASSED: SMTP guide button NOT present in Platform Superadmin email settings",
+    "SCOPE CHECK PASSED: SMTP guide link NOT present in Platform Superadmin email settings",
+    "SCOPE CHECK PASSED: No SMTP guide text or functionality in Platform email modal"
+  ],
+  "test_report_links": [],
+  "action_item_for_main_agent": "",
+  "updated_files": [],
+  "success_percentage": {
+    "frontend": "100%",
+    "scope_check": "100%"
+  },
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}

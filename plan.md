@@ -1,4 +1,4 @@
-# plan.md — Multi-tenant SaaS Booking Platform (WifeToBe → White-label)
+# plan.md — Multi-tenant SaaS Booking Platform (Ivory Digital → White-label)
 
 ## 1) Objectives
 - Replicate **100%** of the reference app’s behavior/UI/API per tenant (public booking + tenant admin dashboard).
@@ -9,153 +9,183 @@
   - Platform owner panel: `/superadmin`
 - Implement **7-day trials** with statuses: `trial | active | expired | suspended` and correct gating (expired/suspended lock screens).
 - Add **white-label branding** per tenant (brand name, colors, logo stored as Mongo base64) applied to public/admin/emails.
-- Ship **Dockge-friendly Docker Compose** + TrueNAS/Nginx path-routing docs + “add a new client” checklist.
+- Ship **TrueNAS/Dockge-friendly Docker Compose** + Nginx path-routing docs + “add a new client” checklist.
+- **NEW (P0): Improve tenant onboarding & self-service**:
+  - Add a **Tenant Admin Help/Guide** experience (sidebar page + quick access).
+  - Add a **Common SMTP Settings** reference list near Email setup (modal with provider presets, app-password explainer, troubleshooting).
 
 ---
 
 ## 2) Implementation Steps (Phased)
 
-### Phase 1 — Core POC: Tenant Resolution + Isolation (do not proceed until green)
-**Core workflow to prove:** request → resolve tenant from path/header → enforce `tenant_id` scoping on every collection/route.
+### Phase 1 — Core POC: Tenant Resolution + Isolation (DONE)
+**Core workflow proved:** request → resolve tenant from path/header → enforce `tenant_id` scoping on every collection/route.
 
-User stories:
-1. As the platform owner, I can create two tenants (A, B) and each gets seeded data.
-2. As a tenant admin in A, I can list my locations and never see B’s locations.
-3. As a public customer on `/{tenant}/`, I can only book into that tenant’s inventory.
-4. As the platform owner, I can suspend a tenant and its public/admin routes lock immediately.
-5. As the platform owner, I can run an automated isolation test that proves A cannot access B.
+Delivered:
+- Tenant resolver and strict tenant scoping across DB access.
+- Automated isolation tests (A cannot read/write B).
+- Manual smoke coverage for tenant-scoped endpoints.
 
-Implementation:
-- Repo bootstrap: new monorepo structure mirroring reference (`/backend`, `/frontend`), copy reference code to preserve behavior.
-- Backend (FastAPI):
-  - Add collections: `tenants`, `platform_users`.
-  - Add `tenant_id` to all tenant-owned docs: users/admins, shops, appointment_types, availability, bookings, waitlist, settings, blocked_dates.
-  - Add tenant resolver middleware/dependency:
-    - Primary: **path tenant slug** (from router prefix or request scope)
-    - Secondary: `X-Tenant` header (frontend sets)
-    - Dev/testing: `?tenant=` override
-    - Optional fallback: Host-subdomain
-    - Never accept `tenant_id` from request body.
-  - Add query scoping helper: `tenant_filter(user_ctx)`; wrap all DB calls.
-  - Create indexes: unique `tenants.slug`; compound indexes `(tenant_id, shop_id, date, status)` etc.
-- Platform auth:
-  - Seed platform superadmin `admin@ivory-digital.uk / IvoryAdmin2025!`.
-  - Separate JWT audience/claims or separate auth dependency to prevent mixing tenant/admin.
-- POC test harness:
-  - Write a **Python script** (or pytest) that:
-    - Creates tenant A + B
-    - Seeds each
-    - Creates data in A
-    - Attempts to read/mutate it via B context
-    - Asserts **403/404** and zero leakage.
-- Web search task (best practice): verify FastAPI multi-tenant patterns (dependency-based scoping + middleware) and Mongo compound indexing.
-
-Exit gate:
+Exit gate (met):
 - Isolation test passes reliably.
-- Manual smoke: `/{tenant}/api/shops` returns only that tenant.
+- Manual smoke: `/{tenant}/api/...` returns only that tenant.
 
 ---
 
-### Phase 2 — V1 App Development (port full reference app into tenant scope)
-User stories:
-1. As a bride on `/{tenant}/`, I can complete the full 5-step booking flow and receive a reference.
-2. As a bride, I can view/reschedule/cancel using `/booking/{reference}` within that tenant.
-3. As a tenant admin, I can login and manage bookings (confirm/complete/cancel/no-show, notes, reschedule).
-4. As a tenant admin, I can manage availability, blocked dates, appointment types, waitlist.
-5. As a tenant superadmin, I can manage up to 4 admins and export CSV + iCal feed.
-
-Implementation:
-- Frontend routing changes:
-  - Add tenant-aware router base: `/:tenant/*` (public + tenant admin).
-  - Reserve `/superadmin/*` for platform panel.
-  - Add a small tenant context helper that derives `tenant` from URL and injects `X-Tenant` header in `axios` interceptor.
-- Backend route refactor:
-  - Keep the same route shapes under `/api`, but enforce tenant scoping on every handler.
-  - Convert the old single global settings doc into **per-tenant settings**.
-  - Ensure bookings reference uniqueness: either global unique with tenant prefixing, or compound unique `(tenant_id, reference)`.
-- Seeding per tenant:
-  - On tenant creation, seed 1 location + default hours + default appointment types + standard questions (source question) similar to reference seed.
-- Platform panel (minimal but complete):
-  - Create/list tenants, show counts (#locations, #bookings), created date.
-  - Actions: extend trial, convert active, suspend/unsuspend, reset owner password, delete.
-- End-of-phase: run one full E2E testing round (public booking + admin management).
+### Phase 2 — V1 App Development (DONE)
+Delivered:
+- Tenant-aware routing `/:tenant/*` and reserved `/superadmin`.
+- Tenant Admin dashboard feature set: bookings, availability, appointment types, locations, branding, admins, account.
+- Public booking flow + manage booking.
+- Platform panel for tenant creation, trial gating controls, max location allowances.
 
 ---
 
-### Phase 3 — Trials + Status Gating + UX locks
-User stories:
-1. As a tenant admin, I see a banner with “X days left in trial”.
-2. As a tenant admin, after expiry I can still login but see a clear lock screen.
-3. As a public customer, expired tenant shows “bookings temporarily unavailable”.
-4. As the platform owner, I can extend a trial and tenant unlocks instantly.
-5. As the platform owner, I can suspend a tenant and both public/admin lock instantly.
-
-Implementation:
-- Tenant status computation on each request:
-  - `trial` + now>=trial_ends_at ⇒ treat as `expired`.
-- Gating rules:
-  - Public routes blocked for `expired|suspended` (message page).
-  - Tenant admin routes: allow auth but block mutations; show lock UI.
-- Platform overview: days remaining, one-click actions.
-- End-of-phase: expand isolation tests to include gating conditions.
+### Phase 3 — Trials + Status Gating + UX locks (DONE)
+Delivered:
+- Trial countdown banner and accurate remaining days display.
+- Expired/suspended lock experience for tenant admin (login allowed, app locked).
+- Public booking lock messaging for expired/suspended tenants.
 
 ---
 
-### Phase 4 — White-label Branding + Logo upload (Mongo base64) + Tenant email theming
-User stories:
-1. As a tenant admin, I can set brand name/colors and see the UI update.
-2. As a tenant admin, I can upload a logo and it displays on public/admin pages.
-3. As a tenant admin, emails (when enabled) include the correct logo and brand text.
-4. As the platform owner, I can set a default footer credit (IvoryDigital) configurable per tenant.
-5. As a tenant admin, I can preview branding before enabling emails.
-
-Implementation:
-- Branding model: stored on tenant doc + exposed via `GET /api/tenant/branding`.
-- Logo upload:
-  - Store base64 + mime + updated_at; serve via `/api/tenant/logo`.
-- Frontend:
-  - Apply CSS variables from branding (primary/accent) while keeping default luxury theme.
-  - Replace Wordmark text with tenant brand_name.
-- Emails:
-  - Keep “off until configured”; when on, render HTML with tenant logo CID.
+### Phase 4 — White-label Branding + Logo upload (Mongo base64) + Tenant email theming (DONE)
+Delivered:
+- Tenant branding (name/colors/logo) applied across public + admin.
+- Logo stored as base64 in MongoDB, rendered with correct aspect ratio.
+- Footer credit locked to Ivory Digital domain.
 
 ---
 
-### Phase 5 — Deployment packaging + Docs + Full regression
-User stories:
-1. As the platform owner, I can deploy via Dockge using one docker-compose.
-2. As the platform owner, Nginx path routing forwards `/superadmin` and `/{tenant}` correctly.
-3. As the platform owner, nightly backups run and retain ~30 days.
-4. As the platform owner, onboarding a new tenant requires no code changes.
-5. As a tenant admin, the system remains stable after restart (seed + indexes + reminder loop).
+### Phase 5 — Deployment packaging + Docs + Full regression (DONE)
+Delivered:
+- Tailored `compose.yaml` for TrueNAS/Dockge.
+- Nginx path-routing documentation.
+- README + client onboarding checklist.
+- Regression testing iterations completed; no known regressions.
 
-Implementation:
-- Docker Compose:
-  - frontend + backend + mongo + backup container (one-line command; retention ~30 days).
-- Nginx docs (path-based):
-  - Proxy rules for `/superadmin`, `/{tenant}`, and `/api` (ensure correct headers).
-- README:
-  - “Add a new client” checklist (platform panel entry + optional DNS + Nginx + SSL).
-- Final testing:
-  - Full E2E regression + isolation suite.
+---
+
+### Phase 6 — Tenant Admin Help/Guide + Common SMTP Settings List (IN PROGRESS — P0)
+**Goal:** Reduce tenant onboarding friction and reduce SMTP support tickets by embedding guidance in the tenant admin.
+
+**Scope decisions (confirmed by user):**
+- Help/Guide appears as **both**:
+  1) a **dedicated sidebar page** (`/{tenant}/admin/help`) and
+  2) a **quick Help button** in the Admin layout header/nav.
+- Common SMTP settings list appears **near the tenant Email settings form** as a button opening a modal.
+- **Tenant Admin only** (do not add to platform superadmin portal UI).
+- **Frontend-only** changes.
+
+#### User Stories
+1. As a tenant admin, I can open a Help page from the sidebar to understand key features and setup steps.
+2. As a tenant admin, I can open Help quickly (1-click) from anywhere in the admin.
+3. As a tenant admin, while setting up email, I can view common SMTP settings for my provider.
+4. As a tenant admin, I can search/filter the SMTP list and understand which port/encryption to use.
+5. As a tenant admin, I can read a short “App Password” explainer and troubleshooting checklist.
+
+#### Implementation (frontend)
+1. **Add SMTP provider constants**
+   - Create: `/app/frontend/src/constants/smtpProviders.js`
+   - Contents:
+     - Provider rows extracted from `Common SMTP Email Settings.pdf`: Gmail/Workspace, Outlook.com, Microsoft 365, Yahoo, iCloud, AOL, BT, Sky Yahoo, Virgin Media, TalkTalk, Plusnet, Zoho, Fastmail, Proton, Custom domain (generic).
+     - Fields per row: `provider`, `host`, `ports` (array), `encryption` (SSL/TLS vs STARTTLS), `notes` (App Password requirements, admin enablement notes, etc.).
+     - Shared sections: `APP_PASSWORD_EXPLAINER`, `TROUBLESHOOTING_TIPS`.
+
+2. **Modal: support wider content (backward compatible)**
+   - Update: `/app/frontend/src/components/admin/ui.jsx`
+   - Add optional prop to `Modal`:
+     - `size` (e.g., `"lg" | "xl"` or `maxWidthClass`) to allow a wider modal for the SMTP table.
+   - Keep default behavior unchanged for all existing modal uses.
+
+3. **SMTP Guide Modal component**
+   - Create: `/app/frontend/src/components/admin/SmtpGuideModal.jsx`
+   - Features:
+     - Search input to filter by provider name/host.
+     - Table/list: Provider | SMTP Host | Ports | Encryption | Notes.
+     - Sections beneath/above table:
+       - “App Passwords” explainer.
+       - Troubleshooting checklist (wrong port, encryption mismatch, username mismatch, app passwords, M365 admin SMTP auth).
+     - Styling: uses existing WTB tokens (`card-wtb`, `btn-wtb`, `input-wtb`, colors).
+
+4. **EmailSettingsForm: add button that opens the SMTP list**
+   - Update: `/app/frontend/src/components/admin/EmailSettingsForm.jsx`
+   - Add prop:
+     - `showSmtpGuide` (default `false`) to ensure platform superadmin UI doesn’t render this.
+   - Place a **“View Common SMTP Settings”** button near SMTP host/port fields.
+   - Clicking opens `SmtpGuideModal`.
+
+5. **Help/Guide page**
+   - Create: `/app/frontend/src/pages/admin/HelpGuide.jsx`
+   - Content structure (lightweight + scannable):
+     - Getting Started (what to do first)
+     - Branding
+     - Locations
+     - Appointments
+     - Availability
+     - Bookings (statuses + how confirmations work)
+     - Customers
+     - Email Setup (SMTP + test email + reminders)
+     - Support/contact link (`mailto:hello@ivory-digital.uk`)
+   - Use simple accordions/cards (shadcn if already present, otherwise lightweight panels).
+
+6. **Routing**
+   - Update: `/app/frontend/src/App.js`
+   - Add tenant admin route:
+     - `Route path="help" element={<HelpGuide />}` under `/:tenant/admin` protected routes.
+
+7. **Admin navigation + quick help access**
+   - Update: `/app/frontend/src/pages/admin/AdminLayout.jsx`
+   - Add sidebar nav item:
+     - `{ seg: "help", icon: <...>, label: "Help & Guide" }` (non-superadmin restricted).
+   - Add quick-help access:
+     - A small header button on mobile and/or next to logout on desktop.
+     - Behavior: navigates to `/{tenant}/admin/help`.
+
+8. **Wire tenant-only SMTP guide**
+   - Update: `/app/frontend/src/pages/admin/Account.jsx`
+   - Pass `showSmtpGuide={true}` to `EmailSettingsForm` so tenant admins see it.
+   - Confirm: platform portal usage (PlatformDashboard) does **not** pass this prop.
+
+#### Testing / Verification
+- Build/lint sanity:
+  - Ensure React compile passes.
+  - Ensure no breaking changes to `Modal` usage.
+- Frontend testing agent (UI verification):
+  - Confirm Help link appears in sidebar.
+  - Confirm quick Help button navigates correctly.
+  - Confirm “View Common SMTP Settings” button renders on Tenant Account page.
+  - Confirm modal opens/closes (Esc, click backdrop, close button).
+  - Confirm search filters provider rows.
+
+#### Exit Criteria
+- Help page is reachable from sidebar and quick-help access.
+- SMTP modal opens from tenant Email settings, displays provider list + explainer + troubleshooting.
+- No changes to platform superadmin email UI.
+- No regressions in tenant admin layout/navigation.
 
 ---
 
 ## 3) Next Actions
-1. Create new repo and copy reference app into it (frontend/backend) as baseline.
-2. Implement tenant model + resolver + tenant-scoped DB helpers.
-3. Build and run Phase 1 isolation POC script until fully green.
-4. Add platform `/superadmin` minimal UI + tenant creation + seed.
+1. Implement Phase 6 steps 1–3 (SMTP constants + Modal sizing + SmtpGuideModal).
+2. Implement Phase 6 steps 4 & 8 (EmailSettingsForm prop + Account.jsx usage).
+3. Implement Phase 6 steps 5–7 (Help page + routing + AdminLayout links/buttons).
+4. Run frontend test agent UI checks and fix any layout regressions.
 
 ---
 
 ## 4) Success Criteria
-- **No feature loss** vs reference app (public + admin + exports + reminders + payments hooks intact).
-- **Tenant isolation proven** by automated tests (A cannot read/write B, including aggregations/exports).
+- **No feature loss** vs reference app (public + tenant admin + exports + reminders + payments hooks intact).
+- **Tenant isolation proven** by automated tests.
 - Correct routing:
   - `/{tenant}/` serves tenant public booking
   - `/{tenant}/admin` serves tenant admin
   - `/superadmin` serves platform panel
-- Trial lifecycle works end-to-end (trial banner, expiry locks, suspend locks, extend/unlock).
+- Trial lifecycle works end-to-end (banner, expiry locks, suspend locks).
 - Branding + logo applied consistently to public/admin/emails.
-- Deployable on TrueNAS via Dockge with documented Nginx path proxying + backups.
+- **NEW:** Tenant admins can self-onboard via Help/Guide and configure SMTP using an embedded provider reference list.
+
+### Deployment reminder (TrueNAS)
+After these **frontend-only** changes, rebuild on TrueNAS:
+- `docker compose build --no-cache frontend`
+- then `docker compose up -d`

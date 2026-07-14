@@ -111,6 +111,7 @@ export default function Account() {
           getUrl="/auth/my-email-settings"
           putUrl="/auth/my-email-settings"
           testUrl="/auth/my-email-settings/test"
+          showSmtpGuide
         />
       </Panel>
     </div>

@@ -40,7 +40,15 @@ export function Toggle({ checked, onChange, testid }) {
   );
 }
 
-export function Modal({ open, onClose, title, children, testid }) {
+const MODAL_SIZES = {
+  lg: "max-w-lg",
+  xl: "max-w-xl",
+  "2xl": "max-w-2xl",
+  "3xl": "max-w-3xl",
+  "4xl": "max-w-4xl",
+};
+
+export function Modal({ open, onClose, title, children, testid, size = "lg" }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -49,13 +57,14 @@ export function Modal({ open, onClose, title, children, testid }) {
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
   }, [open, onClose]);
   if (!open) return null;
+  const maxWidth = MODAL_SIZES[size] || MODAL_SIZES.lg;
   return createPortal(
     <div className="fixed inset-0 z-50 overflow-y-auto" data-testid={testid}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="fixed inset-0 pointer-events-none" style={{ background: "rgba(42,37,33,.55)", backdropFilter: "blur(2px)" }} />
       <div className="relative min-h-full flex items-start sm:items-center justify-center p-3 sm:p-6"
         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-        <div className="relative card-wtb w-full max-w-lg my-6 sm:my-10 reveal-up">
+        <div className={`relative card-wtb w-full ${maxWidth} my-6 sm:my-10 reveal-up`}>
           <div className="sticky top-0 z-10 flex items-center justify-between px-5 sm:px-8 py-4 border-b"
             style={{ borderColor: "var(--line)", background: "#fff" }}>
             <h3 className="text-2xl sm:text-3xl">{title}</h3>

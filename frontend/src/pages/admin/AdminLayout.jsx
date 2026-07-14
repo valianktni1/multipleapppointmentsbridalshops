@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
-import { LayoutDashboard, CalendarDays, Clock, Tags, Users, Settings as Cog, UserCircle, LogOut, Sliders, ListChecks, BarChart3, Contact, MapPin, Palette, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Clock, Tags, Users, Settings as Cog, UserCircle, LogOut, Sliders, ListChecks, BarChart3, Contact, MapPin, Palette, AlertTriangle, LifeBuoy } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Wordmark, DesignerCredit } from "@/components/Brand";
 
@@ -18,6 +18,7 @@ const NAV = [
   { seg: "admins", icon: Users, label: "Admins", superadmin: true },
   { seg: "settings", icon: Cog, label: "Settings", superadmin: true },
   { seg: "account", icon: UserCircle, label: "My Account" },
+  { seg: "help", icon: LifeBuoy, label: "Help & Guide" },
 ];
 
 function LockScreen({ status, brand }) {
@@ -93,12 +94,19 @@ export default function AdminLayout() {
             className="flex items-center gap-2 px-2 font-sans-j text-sm hover:text-[var(--gold-deep)]" style={{ color: "var(--taupe)" }}>
             <LogOut size={16} /> Sign Out
           </button>
+          <NavLink to={`${base}/help`} data-testid="quick-help-btn"
+            className="flex items-center gap-2 px-2 mt-3 font-sans-j text-sm hover:text-[var(--gold-deep)]" style={{ color: "var(--taupe)" }}>
+            <LifeBuoy size={16} /> Need help?
+          </NavLink>
         </div>
       </aside>
 
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--line)", background: "#fff" }}>
         <Wordmark size="text-2xl" />
-        <button onClick={doLogout} style={{ color: "var(--taupe)" }} data-testid="logout-btn-mobile"><LogOut size={18} /></button>
+        <div className="flex items-center gap-4">
+          <NavLink to={`${base}/help`} style={{ color: "var(--taupe)" }} data-testid="quick-help-btn-mobile" aria-label="Help & Guide"><LifeBuoy size={18} /></NavLink>
+          <button onClick={doLogout} style={{ color: "var(--taupe)" }} data-testid="logout-btn-mobile"><LogOut size={18} /></button>
+        </div>
       </div>
 
       <main className="flex-1 min-w-0 p-6 md:p-10 pt-20 md:pt-10 overflow-x-hidden">

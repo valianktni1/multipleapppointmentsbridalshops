@@ -26,6 +26,7 @@ import Branding from "@/pages/admin/Branding";
 import Waitlist from "@/pages/admin/Waitlist";
 import Analytics from "@/pages/admin/Analytics";
 import Customers from "@/pages/admin/Customers";
+import HelpGuide from "@/pages/admin/HelpGuide";
 
 import PlatformLogin from "@/pages/platform/PlatformLogin";
 import PlatformDashboard from "@/pages/platform/PlatformDashboard";
@@ -62,6 +63,7 @@ function App() {
                   <Route path="admins" element={<Admins />} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="account" element={<Account />} />
+                  <Route path="help" element={<HelpGuide />} />
                 </Route>
               </Route>
 

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Mail, CheckCircle2, Eye, EyeOff } from "lucide-react";
+import { Mail, CheckCircle2, Eye, EyeOff, BookOpen } from "lucide-react";
 import api, { apiErr } from "@/lib/api";
 import { Field } from "@/components/admin/ui";
+import SmtpGuideModal from "@/components/admin/SmtpGuideModal";
 
 /**
  * Reusable SMTP / Email settings form matching the proven Hostinger-style layout:
@@ -16,12 +17,14 @@ export default function EmailSettingsForm({
   testUrl,
   heading = "SMTP Configuration",
   help = "Configure your email so notifications are sent directly from your own address.",
+  showSmtpGuide = false,
 }) {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [show, setShow] = useState(false);
   const [testTo, setTestTo] = useState("");
+  const [guideOpen, setGuideOpen] = useState(false);
 
   useEffect(() => {
     api.get(getUrl).then(({ data }) => {
@@ -65,9 +68,16 @@ export default function EmailSettingsForm({
 
   return (
     <div className="max-w-xl">
-      <div className="flex items-center gap-3 mb-1">
-        <Mail size={18} style={{ color: "var(--gold)" }} />
-        <h3 className="text-2xl">{heading}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+        <div className="flex items-center gap-3">
+          <Mail size={18} style={{ color: "var(--gold)" }} />
+          <h3 className="text-2xl">{heading}</h3>
+        </div>
+        {showSmtpGuide && (
+          <button type="button" className="btn-wtb btn-ghost-wtb" onClick={() => setGuideOpen(true)} data-testid="open-smtp-guide">
+            <BookOpen size={14} className="mr-2" /> View Common SMTP Settings
+          </button>
+        )}
       </div>
       <p className="font-sans-j text-sm mb-6" style={{ color: "var(--taupe)" }}>{help}</p>
 
@@ -80,6 +90,12 @@ export default function EmailSettingsForm({
           <input className="input-wtb" type="number" value={form.smtp_port} data-testid="email-smtp-port"
             onChange={(e) => set({ smtp_port: Number(e.target.value) })} placeholder="465" />
           <p className="font-sans-j text-xs mt-1" style={{ color: "var(--taupe)" }}>465 for SSL · 587 for STARTTLS</p>
+          {showSmtpGuide && (
+            <button type="button" onClick={() => setGuideOpen(true)} data-testid="port-smtp-guide-link"
+              className="font-sans-j text-xs mt-1 underline hover:text-[var(--gold-deep)] transition-colors" style={{ color: "var(--gold-deep)" }}>
+              Not sure? View common settings for your provider
+            </button>
+          )}
         </Field>
         <Field label="Email Address">
           <input className="input-wtb" type="email" value={form.sender_email} data-testid="email-address"
@@ -128,6 +144,8 @@ export default function EmailSettingsForm({
           <li>Your customers then receive beautiful branded emails from your own address.</li>
         </ol>
       </div>
+
+      {showSmtpGuide && <SmtpGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />}
     </div>
   );
 }
