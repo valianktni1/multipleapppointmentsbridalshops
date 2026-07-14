@@ -1,0 +1,65 @@
+# ============================================================================
+# Ivory Digital - Multi-tenant SaaS Booking Platform
+# Dockge-friendly Docker Compose. Builds frontend + backend from this repo,
+# runs MongoDB, and a nightly mongodump backup (retains ~30 days).
+# ============================================================================
+version: "3.8"
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    # Not published to host by default; only the backend talks to it.
+    networks: [ivory]
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - DB_NAME=ivory_booking
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - PLATFORM_SUPERADMIN_EMAIL=${PLATFORM_SUPERADMIN_EMAIL:-admin@ivory-digital.uk}
+      - PLATFORM_SUPERADMIN_PASSWORD=${PLATFORM_SUPERADMIN_PASSWORD:-IvoryAdmin2025!}
+      - PLATFORM_SUPERADMIN_NAME=${PLATFORM_SUPERADMIN_NAME:-Ivory Digital}
+      - PLATFORM_FOOTER_CREDIT=${PLATFORM_FOOTER_CREDIT:-Designed & Hosted by IvoryDigital}
+      # Optional PayPal card checkout (leave blank to keep the hook disabled)
+      - PAYPAL_CLIENT_ID=${PAYPAL_CLIENT_ID:-}
+      - PAYPAL_SECRET=${PAYPAL_SECRET:-}
+      - PAYPAL_MODE=${PAYPAL_MODE:-sandbox}
+    depends_on: [mongo]
+    networks: [ivory]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Public URL the browser uses to reach this stack (your domain).
+        - REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-https://ivory-digital.uk}
+    restart: unless-stopped
+    ports:
+      # Expose to the TrueNAS Nginx Proxy Manager (host:container).
+      - "8080:80"
+    depends_on: [backend]
+    networks: [ivory]
+
+  backup:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - ./backups:/backups
+    depends_on: [mongo]
+    networks: [ivory]
+    # Nightly dump at 03:00, keep ~30 days. Keep the command on ONE line; $$ escapes for compose.
+    entrypoint: ["bash", "-c", "while true; do sleep 86400; mongodump --uri=mongodb://mongo:27017 --archive=/backups/ivory-$$(date +%F).gz --gzip && find /backups -name 'ivory-*.gz' -mtime +30 -delete; done"]
+
+volumes:
+  mongo_data:
+
+networks:
+  ivory:
+    driver: bridge

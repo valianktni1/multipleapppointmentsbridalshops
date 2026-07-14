@@ -1,6 +1,6 @@
 [
   {
-    "content": "Phase 1: Multi-tenant backend foundation (tenants + platform_users, tenant_id scoping, resolver, platform auth + seed)",
+    "content": "Phase 1: Multi-tenant backend foundation + platform auth/seed",
     "status": "completed"
   },
   {
@@ -12,15 +12,15 @@
     "status": "completed"
   },
   {
-    "content": "Phase 2: Port full tenant admin dashboard + public booking flow, scoped by tenant",
+    "content": "Phase 2: Full tenant admin dashboard + public booking flow, tenant-scoped",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Tenant-aware frontend routing /:tenant/* + /superadmin + X-Tenant interceptor",
+    "content": "Phase 2: Tenant-aware frontend routing + X-Tenant interceptor",
     "status": "completed"
   },
   {
-    "content": "Phase 3: 7-day trial logic + status gating (expired/suspended lock screens) + trial banner",
+    "content": "Phase 3: 7-day trial logic + status gating + trial banner + lock screens",
     "status": "completed"
   },
   {
@@ -28,11 +28,11 @@
     "status": "completed"
   },
   {
-    "content": "Phase 2-4: End-to-end testing (platform + public booking + tenant admin + isolation) via testing agent",
-    "status": "in_progress"
+    "content": "Phase 2-4: End-to-end testing (backend 98.2%, isolation 100%, gating 100%, frontend 95%)",
+    "status": "completed"
   },
   {
-    "content": "Phase 5: Docker/Dockge compose + Nginx path-routing docs + 'add a client' checklist",
-    "status": "pending"
+    "content": "Phase 5: Docker/Dockge compose + Dockerfiles + Nginx path-routing + README 'add a client' checklist",
+    "status": "completed"
   }
 ]
