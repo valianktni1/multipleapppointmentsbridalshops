@@ -1,0 +1,74 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: ivory-mongo
+    restart: unless-stopped
+    command:
+      - --quiet
+    volumes:
+      - /mnt/apps/Ivorydigitalappointments/data:/data/db
+    networks:
+      - ivory-network
+
+  backend:
+    build:
+      context: https://github.com/valianktni1/multipleapppointmentsbridalshops.git#main:backend
+    container_name: ivory-backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      DB_NAME: ivory_booking
+      CORS_ORIGINS: "*"
+      JWT_SECRET: f78e2609e795aa6b990cbc8fa2bd074af5ae81e992e45f28a0623c19ba532179
+      PLATFORM_SUPERADMIN_EMAIL: mark@perfectweddingsbymark.uk
+      PLATFORM_SUPERADMIN_PASSWORD: Valiant-kni123
+      PLATFORM_SUPERADMIN_NAME: Ivory Digital
+      PLATFORM_FOOTER_CREDIT: "Designed & Hosted by IvoryDigital"
+      # Optional PayPal card checkout (leave blank to keep the hook disabled)
+      PAYPAL_CLIENT_ID: ""
+      PAYPAL_SECRET: ""
+      PAYPAL_MODE: sandbox
+    volumes:
+      - /mnt/photographers_data/ivorydigitalusers:/app/saveddata
+    networks:
+      - ivory-network
+
+  frontend:
+    build:
+      context: https://github.com/valianktni1/multipleapppointmentsbridalshops.git#main:frontend
+      args:
+        REACT_APP_BACKEND_URL: ""
+    container_name: ivory-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - 30041:80
+    networks:
+      - ivory-network
+
+  backup:
+    image: mongo:7
+    container_name: ivory-backup
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          mongodump --uri="mongodb://mongo:27017" --db=ivory_booking --gzip --archive=/backup/ivory_booking-$(date +%Y%m%d-%H%M%S).gz;
+          find /backup -name 'ivory_booking-*.gz' -mtime +30 -delete;
+          sleep 86400;
+        done
+    volumes:
+      - /mnt/photographers_data/ivorydigitalusers:/backup
+    networks:
+      - ivory-network
+
+networks:
+  ivory-network:
+    driver: bridge
