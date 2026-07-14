@@ -1,0 +1,48 @@
+{
+  "summary": "Completed comprehensive testing of shop EDIT (PATCH) functionality for multi-tenant bridal booking SaaS. All backend APIs, admin UI edit features, and public booking page updates are working correctly. Tenant isolation verified. Regression tests pass 35/35.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: PATCH /api/shops/{shop_id} updates name, role_label, address, phone, email, blurb, hours_text (23/23 tests passed)",
+    "Backend: POST /api/shops creates additional location with seeded availability",
+    "Backend: GET /api/shops returns 2+ locations after creation",
+    "Backend: DELETE /api/shops/{id} blocked when only one location remains (400)",
+    "Backend: Public GET /api/shops (no auth) returns shop details with updated names and addresses",
+    "Backend: Tenant isolation - different tenant cannot PATCH superbrides shops (404)",
+    "Frontend Admin: Login to /superbrides/admin/login successful",
+    "Frontend Admin: Locations page displays location cards with edit buttons",
+    "Frontend Admin: Edit modal opens with prefilled fields (loc-name, loc-role, loc-address, loc-phone, loc-email, loc-blurb, loc-hours)",
+    "Frontend Admin: Edit modal Save button updates location and shows success toast",
+    "Frontend Admin: Location card updates with new name and address after save",
+    "Frontend Admin: Add Location button opens create modal",
+    "Frontend Public: /superbrides booking page Step 1 'Choose Your Boutique' displays updated boutique names and addresses",
+    "Frontend Public: Multiple boutiques (2+) are selectable and clickable",
+    "Frontend Public: Clicking boutique card advances to appointment selection step",
+    "Frontend Public: Back button returns to boutique selection",
+    "Frontend Public: Second boutique can be selected successfully",
+    "Regression: poc_isolation.py passes all 35 tests (tenant isolation, cross-tenant protection, suspend/expire gating)"
+  ],
+  "test_report_links": [
+    "/app/tests/shop_edit_test.py",
+    "/app/tests/poc_isolation.py"
+  ],
+  "success_percentage": {
+    "backend": "100% (23/23 tests passed)",
+    "frontend_admin": "100% (all edit functionality working)",
+    "frontend_public": "100% (updated details displayed, multi-location selection working)",
+    "regression": "100% (35/35 tests passed)"
+  },
+  "updated_files": [
+    "/app/tests/shop_edit_test.py"
+  ],
+  "action_item_for_main_agent": "",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}
