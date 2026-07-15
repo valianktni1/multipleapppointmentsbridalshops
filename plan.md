@@ -96,8 +96,8 @@ Files updated:
 
 ---
 
-### Phase 7 — Billing: Paid Plans, Due Dates & Invoicing (IN PROGRESS — P0)
-**Goal:** Make the platform operational for paying customers: plan assignment, due date visibility, invoice generation/sending, and manual email tools.
+### Phase 7 — Billing: Paid Plans, Due Dates & Invoicing (COMPLETED — P0)
+**Result:** Shipped & verified by testing agent (iteration_9.json — backend 77/77, frontend 100%). Superadmin can assign preset/custom plans, see next due dates, generate & (auto/manual) send PDF invoices, edit company/HMRC details, and send manual emails with attachments. New deps: fpdf2 (added to requirements.txt + requirements-docker.txt).
 
 #### Confirmed Requirements (from user)
 1. **Plans (GBP)**
