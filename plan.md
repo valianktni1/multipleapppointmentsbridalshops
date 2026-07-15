@@ -10,9 +10,15 @@
 - Implement **7-day trials** with statuses: `trial | active | expired | suspended` and correct gating (expired/suspended lock screens).
 - Add **white-label branding** per tenant (brand name, colors, logo stored as Mongo base64) applied to public/admin/emails.
 - Ship **TrueNAS/Dockge-friendly Docker Compose** + Nginx path-routing docs + “add a new client” checklist.
-- **NEW (P0): Improve tenant onboarding & self-service**:
+- **P0 (Completed): Improve tenant onboarding & self-service**:
   - Add a **Tenant Admin Help/Guide** experience (sidebar page + quick access).
   - Add a **Common SMTP Settings** reference list near Email setup (modal with provider presets, app-password explainer, troubleshooting).
+- **NEW (P0): Launch-ready commercial ops** (now that site is live):
+  - Track **paid plan (monthly/annual/custom)** per tenant.
+  - Track **next payment due date** per tenant.
+  - Generate and send **HMRC-friendly invoices** (PDF + email body) **monthly/annually**.
+  - Provide **manual invoice send + auto scheduler**.
+  - Provide a **manual email composer** (with attachment support) sent from platform SMTP identity (admin@ivorydigital.uk).
 
 ---
 
@@ -67,127 +73,256 @@ Delivered:
 ---
 
 ### Phase 6 — Tenant Admin Help/Guide + Common SMTP Settings List (COMPLETED — P0)
-**Result:** All features shipped & verified by frontend testing agent (iteration_8.json — 100%, incl. scope check that SMTP guide is absent from Platform Superadmin portal). Files added: `constants/smtpProviders.js`, `components/admin/SmtpGuideModal.jsx`, `pages/admin/HelpGuide.jsx`. Files updated: `components/admin/ui.jsx` (Modal size prop), `components/admin/EmailSettingsForm.jsx` (showSmtpGuide prop), `pages/admin/Account.jsx`, `pages/admin/AdminLayout.jsx`, `App.js`.
+**Result:** Shipped & verified by frontend testing agent (iteration_8.json — 100%, incl. scope check that SMTP guide is absent from Platform Superadmin portal).
 
-**Goal:** Reduce tenant onboarding friction and reduce SMTP support tickets by embedding guidance in the tenant admin.
-
-**Scope decisions (confirmed by user):**
+Key deliverables:
 - Help/Guide appears as **both**:
   1) a **dedicated sidebar page** (`/{tenant}/admin/help`) and
-  2) a **quick Help button** in the Admin layout header/nav.
-- Common SMTP settings list appears **near the tenant Email settings form** as a button opening a modal.
-- **Tenant Admin only** (do not add to platform superadmin portal UI).
-- **Frontend-only** changes.
+  2) quick access links/buttons in the admin layout.
+- Common SMTP settings list appears **near the tenant Email settings form** as a button/link opening a modal.
+- **Tenant Admin only** (not shown in platform superadmin portal).
 
-#### User Stories
-1. As a tenant admin, I can open a Help page from the sidebar to understand key features and setup steps.
-2. As a tenant admin, I can open Help quickly (1-click) from anywhere in the admin.
-3. As a tenant admin, while setting up email, I can view common SMTP settings for my provider.
-4. As a tenant admin, I can search/filter the SMTP list and understand which port/encryption to use.
-5. As a tenant admin, I can read a short “App Password” explainer and troubleshooting checklist.
+Files added:
+- `/app/frontend/src/constants/smtpProviders.js`
+- `/app/frontend/src/components/admin/SmtpGuideModal.jsx`
+- `/app/frontend/src/pages/admin/HelpGuide.jsx`
 
-#### Implementation (frontend)
-1. **Add SMTP provider constants**
-   - Create: `/app/frontend/src/constants/smtpProviders.js`
-   - Contents:
-     - Provider rows extracted from `Common SMTP Email Settings.pdf`: Gmail/Workspace, Outlook.com, Microsoft 365, Yahoo, iCloud, AOL, BT, Sky Yahoo, Virgin Media, TalkTalk, Plusnet, Zoho, Fastmail, Proton, Custom domain (generic).
-     - Fields per row: `provider`, `host`, `ports` (array), `encryption` (SSL/TLS vs STARTTLS), `notes` (App Password requirements, admin enablement notes, etc.).
-     - Shared sections: `APP_PASSWORD_EXPLAINER`, `TROUBLESHOOTING_TIPS`.
+Files updated:
+- `/app/frontend/src/components/admin/ui.jsx` (Modal size prop)
+- `/app/frontend/src/components/admin/EmailSettingsForm.jsx` (showSmtpGuide prop)
+- `/app/frontend/src/pages/admin/Account.jsx`
+- `/app/frontend/src/pages/admin/AdminLayout.jsx`
+- `/app/frontend/src/App.js`
 
-2. **Modal: support wider content (backward compatible)**
-   - Update: `/app/frontend/src/components/admin/ui.jsx`
-   - Add optional prop to `Modal`:
-     - `size` (e.g., `"lg" | "xl"` or `maxWidthClass`) to allow a wider modal for the SMTP table.
-   - Keep default behavior unchanged for all existing modal uses.
+---
 
-3. **SMTP Guide Modal component**
-   - Create: `/app/frontend/src/components/admin/SmtpGuideModal.jsx`
-   - Features:
-     - Search input to filter by provider name/host.
-     - Table/list: Provider | SMTP Host | Ports | Encryption | Notes.
-     - Sections beneath/above table:
-       - “App Passwords” explainer.
-       - Troubleshooting checklist (wrong port, encryption mismatch, username mismatch, app passwords, M365 admin SMTP auth).
-     - Styling: uses existing WTB tokens (`card-wtb`, `btn-wtb`, `input-wtb`, colors).
+### Phase 7 — Billing: Paid Plans, Due Dates & Invoicing (IN PROGRESS — P0)
+**Goal:** Make the platform operational for paying customers: plan assignment, due date visibility, invoice generation/sending, and manual email tools.
 
-4. **EmailSettingsForm: add button that opens the SMTP list**
-   - Update: `/app/frontend/src/components/admin/EmailSettingsForm.jsx`
-   - Add prop:
-     - `showSmtpGuide` (default `false`) to ensure platform superadmin UI doesn’t render this.
-   - Place a **“View Common SMTP Settings”** button near SMTP host/port fields.
-   - Clicking opens `SmtpGuideModal`.
+#### Confirmed Requirements (from user)
+1. **Plans (GBP)**
+   - Preset plan A: **£15/month** or **£140/year**
+   - Preset plan B: **£26/month** or **£285/year**
+   - Plus **Custom plan** (any name + price)
+   - Superadmin selects preset/custom + **billing cycle** (monthly/annual)
+   - Default labels: **“Essential”** and **“Professional”** (editable in UI before saving)
 
-5. **Help/Guide page**
-   - Create: `/app/frontend/src/pages/admin/HelpGuide.jsx`
-   - Content structure (lightweight + scannable):
-     - Getting Started (what to do first)
-     - Branding
-     - Locations
-     - Appointments
-     - Availability
-     - Bookings (statuses + how confirmations work)
-     - Customers
-     - Email Setup (SMTP + test email + reminders)
-     - Support/contact link (`mailto:hello@ivory-digital.uk`)
-   - Use simple accordions/cards (shadcn if already present, otherwise lightweight panels).
+2. **Due date logic**
+   - Option (a): set from activation day and repeats per cycle
+   - Monthly: activated 5th → due 5th each month
+   - Annual: activated 5th → due 5th next year
 
-6. **Routing**
-   - Update: `/app/frontend/src/App.js`
-   - Add tenant admin route:
-     - `Route path="help" element={<HelpGuide />}` under `/:tenant/admin` protected routes.
+3. **Invoicing**
+   - Both:
+     - Manual “Generate & Send” per tenant
+     - Automatic scheduler (daily billing loop) that sends when due
 
-7. **Admin navigation + quick help access**
-   - Update: `/app/frontend/src/pages/admin/AdminLayout.jsx`
-   - Add sidebar nav item:
-     - `{ seg: "help", icon: <...>, label: "Help & Guide" }` (non-superadmin restricted).
-   - Add quick-help access:
-     - A small header button on mobile and/or next to logout on desktop.
-     - Behavior: navigates to `/{tenant}/admin/help`.
+4. **Invoice format**
+   - Both: **PDF attachment + formatted email body**
 
-8. **Wire tenant-only SMTP guide**
-   - Update: `/app/frontend/src/pages/admin/Account.jsx`
-   - Pass `showSmtpGuide={true}` to `EmailSettingsForm` so tenant admins see it.
-   - Confirm: platform portal usage (PlatformDashboard) does **not** pass this prop.
+5. **Invoice/Company details (defaults; editable in platform settings UI)**
+   - Heading / issuer: **“Weddings By Mark / Ivory Digital”**
+   - Address: **220 Ashurst Road, Manchester M22 5AX**
+   - Bank details:
+     - Sort Code: **04-06-05**
+     - Account No: **20315075**
+     - Name: **Mark Powell**
+     - Bank: **Tide/ClearBank Sole Trader business account**
+   - VAT: **none**
 
-#### Testing / Verification
-- Build/lint sanity:
-  - Ensure React compile passes.
-  - Ensure no breaking changes to `Modal` usage.
-- Frontend testing agent (UI verification):
-  - Confirm Help link appears in sidebar.
-  - Confirm quick Help button navigates correctly.
-  - Confirm “View Common SMTP Settings” button renders on Tenant Account page.
-  - Confirm modal opens/closes (Esc, click backdrop, close button).
-  - Confirm search filters provider rows.
+6. **Manual email tool**
+   - Full email composer
+   - “To” defaults to tenant owner email but editable
+   - Subject + message body
+   - **Attachment support** (upload one or more files)
+   - Sent via platform SMTP identity (configured in `/platform/email-settings`, e.g. admin@ivorydigital.uk)
 
-#### Exit Criteria
-- Help page is reachable from sidebar and quick-help access.
-- SMTP modal opens from tenant Email settings, displays provider list + explainer + troubleshooting.
-- No changes to platform superadmin email UI.
-- No regressions in tenant admin layout/navigation.
+#### Existing infrastructure to reuse
+- Platform SMTP settings already exist:
+  - `GET/PUT/POST /platform/email-settings` and tested send logic.
+- Email rendering and SMTP sending:
+  - `render_email`, `_smtp_send`, `dispatch_email`.
+- Background scheduler pattern:
+  - `reminder_loop()` started at FastAPI startup.
+- Tenants table already exists in platform dashboard.
+- `tenant.plan` exists today (currently mostly `trial` vs `active`); will be extended with structured billing fields.
+
+---
+
+## Phase 7 Implementation (Backend)
+
+### 7.1 Data model updates (MongoDB)
+1. **Tenant billing subdocument** stored inside `tenants` collection:
+   ```js
+   billing: {
+     plan_tier: "essential" | "professional" | "custom",
+     plan_name: string,
+     price: number,
+     cycle: "monthly" | "annual",
+     currency: "GBP",
+     start_date: ISOString,
+     next_due_date: ISOString,
+     active: boolean
+   }
+   ```
+
+2. **Platform company/invoice settings** in `platform_settings`:
+   - Key: `company`
+   - Defaults from user
+   ```js
+   { key: "company", heading, address, bank_sort_code, bank_account_no, bank_account_name, bank_name, payment_terms }
+   ```
+
+3. **Invoices collection** `invoices`:
+   ```js
+   {
+     number: string,
+     tenant_id: string,
+     tenant_name: string,
+     issued_date: ISOString,
+     due_date: ISOString,
+     period_key: string, // idempotency key e.g. tenant_id + YYYY-MM
+     plan_name: string,
+     amount: number,
+     currency: "GBP",
+     cycle: "monthly" | "annual",
+     status: "draft" | "sent" | "paid" | "void",
+     sent_to: string,
+     created_at: ISOString
+   }
+   ```
+
+### 7.2 Dependencies
+- Add **fpdf2** for PDF invoice generation.
+- Update:
+  - `/app/backend/requirements.txt`
+  - `/app/backend/requirements-docker.txt`
+
+### 7.3 Core helpers
+- `add_cycle(dt, cycle)`:
+  - Monthly/yearly date increment with day clamping (e.g., 31st → 30th in shorter months).
+- `build_invoice_pdf(invoice, company_settings)` using fpdf2.
+- Extend `_smtp_send()` to accept **attachments** (backward compatible):
+  - `attachments: List[{filename, content_type, data_bytes}]`
+
+### 7.4 New/extended platform endpoints
+1. **Plans**
+   - `GET /api/platform/plans`
+     - Returns presets and allowed cycles.
+
+2. **Company/invoice settings**
+   - `GET /api/platform/company-settings`
+   - `PUT /api/platform/company-settings`
+
+3. **Assign tenant plan (activation sets due date)**
+   - `POST /api/platform/tenants/{tenant_id}/plan`
+     - Body: `{ plan_tier, plan_name, price, cycle }`
+     - Sets `tenants.billing`, sets `status: active`, sets `plan: active`
+     - Sets `start_date = now`, `next_due_date = add_cycle(now, cycle)`
+
+4. **Invoices (history + generate)**
+   - `GET /api/platform/tenants/{tenant_id}/invoices`
+   - `POST /api/platform/tenants/{tenant_id}/generate-invoice`
+     - Body: `{ send: bool }`
+     - Creates invoice record (idempotent by `period_key`)
+     - Generates PDF bytes
+     - If `send`, emails to tenant owner, from platform SMTP
+
+5. **Invoice PDF download**
+   - `GET /api/platform/invoices/{invoice_id}/pdf`
+     - Returns `application/pdf`
+
+6. **Manual email composer**
+   - `POST /api/platform/send-email`
+     - Accepts: `to`, `subject`, `message`, `attachments[]`
+     - Attachments support via base64 or multipart (choose approach during implementation)
+
+7. **Tenant overview enrichment**
+   - Extend `_tenant_overview()` to include:
+     - `billing.plan_name`, `billing.price`, `billing.cycle`, `billing.next_due_date`
+
+### 7.5 Automated monthly/annual invoicing loop
+- Add `billing_loop()` background task started on startup:
+  - Runs daily (or every few hours).
+  - For each active tenant with `billing.active == true`:
+    - If `now >= next_due_date`:
+      - Generate invoice (idempotent)
+      - Send email + PDF
+      - Advance `next_due_date = add_cycle(next_due_date, cycle)`
+
+---
+
+## Phase 7 Implementation (Frontend)
+
+### 7.6 Platform dashboard table upgrades
+- Update `/app/frontend/src/pages/platform/PlatformDashboard.jsx`:
+  - Add columns:
+    - **Plan** (plan_name + £price + cycle)
+    - **Next Due** (formatted date)
+  - Row actions:
+    - **Plan** → opens `PlanModal`
+    - **Invoices** → opens `InvoicesModal`
+
+### 7.7 New platform modals/components
+Create `/app/frontend/src/components/platform/BillingModals.jsx` (or separate files):
+1. `PlanModal`
+   - Preset buttons for Essential/Professional with monthly/annual toggle
+   - Custom fields (name + price + cycle)
+   - Shows computed next due date
+   - Save → calls `/platform/tenants/{id}/plan`
+
+2. `InvoicesModal`
+   - Shows invoice history table
+   - Buttons:
+     - Generate (draft)
+     - Generate & Send
+     - Download PDF
+
+3. `CompanySettingsModal`
+   - Edit heading, address, bank details, payment terms
+
+4. `ManualEmailModal`
+   - To (default tenant owner), subject, message
+   - Attachment picker (file upload)
+   - Send via `/platform/send-email`
+
+### 7.8 Platform header controls
+- Add header buttons:
+  - “Company Details”
+  - “Send Email”
+  - Keep existing “Email Settings” (platform SMTP)
 
 ---
 
 ## 3) Next Actions
-1. Implement Phase 6 steps 1–3 (SMTP constants + Modal sizing + SmtpGuideModal).
-2. Implement Phase 6 steps 4 & 8 (EmailSettingsForm prop + Account.jsx usage).
-3. Implement Phase 6 steps 5–7 (Help page + routing + AdminLayout links/buttons).
-4. Run frontend test agent UI checks and fix any layout regressions.
+### Immediate (Phase 7)
+1. Backend: add fpdf2 to requirements and implement invoice PDF builder.
+2. Backend: extend SMTP send to support attachments.
+3. Backend: add billing fields to tenants + new platform endpoints.
+4. Backend: implement `billing_loop()` for automatic invoice generation/sending.
+5. Frontend: extend platform tenants table with Plan + Next Due and implement modals (Plan/Invoices/Company/Manual Email).
+6. Add tests:
+   - Backend tests for plan assignment, next_due_date computation, invoice generation idempotency, pdf download, manual email + attachments.
+   - Frontend tests for modals render/open/submit.
 
 ---
 
 ## 4) Success Criteria
-- **No feature loss** vs reference app (public + tenant admin + exports + reminders + payments hooks intact).
-- **Tenant isolation proven** by automated tests.
-- Correct routing:
-  - `/{tenant}/` serves tenant public booking
-  - `/{tenant}/admin` serves tenant admin
-  - `/superadmin` serves platform panel
-- Trial lifecycle works end-to-end (banner, expiry locks, suspend locks).
-- Branding + logo applied consistently to public/admin/emails.
-- **NEW:** Tenant admins can self-onboard via Help/Guide and configure SMTP using an embedded provider reference list.
+- **No feature loss** vs current live platform (public booking + tenant admin + reminders, etc.).
+- Platform dashboard shows per-tenant:
+  - Status, plan name, price, cycle, **next due date**.
+- Superadmin can:
+  - Assign preset plans or custom plans.
+  - Generate & send invoices manually.
+  - Have invoices sent automatically on due dates.
+  - Edit company/invoice details.
+  - Send manual emails with attachments.
+- Invoices are:
+  - Properly numbered, stored, downloadable as PDF.
+  - Emailed with a formatted body + PDF attachment.
 
 ### Deployment reminder (TrueNAS)
-After these **frontend-only** changes, rebuild on TrueNAS:
-- `docker compose build --no-cache frontend`
-- then `docker compose up -d`
+Phase 7 includes **backend + frontend** changes and new backend dependencies.
+Rebuild both:
+- `docker compose build --no-cache backend frontend`
+- `docker compose up -d`

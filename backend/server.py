@@ -42,6 +42,30 @@ TRIAL_DAYS = 7
 DEFAULT_FOOTER_CREDIT = os.environ.get("PLATFORM_FOOTER_CREDIT", "Designed & Hosted by IvoryDigital")
 RESERVED_SLUGS = {"superadmin", "admin", "api", "platform", "static", "assets", "www", "app", "booking"}
 
+# ------------------------------------------------------------------ billing config
+CURRENCY = "GBP"
+CURRENCY_SYMBOL = "£"
+PRESET_PLANS = [
+    {"tier": "essential", "name": "Essential", "monthly": 15.0, "annual": 140.0,
+     "description": "Booking system — Essential plan"},
+    {"tier": "professional", "name": "Professional", "monthly": 26.0, "annual": 285.0,
+     "description": "Booking system — Professional plan"},
+]
+COMPANY_DEFAULTS = {
+    "key": "company",
+    "heading": "Weddings By Mark / Ivory Digital",
+    "address": "220 Ashurst Road\nManchester\nM22 5AX",
+    "email": "admin@ivory-digital.uk",
+    "bank_account_name": "Mark Powell",
+    "bank_name": "Tide / ClearBank Sole Trader business account",
+    "bank_sort_code": "04-06-05",
+    "bank_account_no": "20315075",
+    "vat_number": "",
+    "payment_terms": "Payment due by the invoice due date. Please use the invoice number as your payment reference.",
+    "invoice_prefix": "INV-",
+    "next_seq": 1000,
+}
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -68,6 +92,40 @@ def parse_dt(v) -> Optional[datetime]:
         except Exception:
             return None
     return None
+
+
+def add_cycle(dt: datetime, cycle: str, count: int = 1) -> datetime:
+    """Advance a date by whole months (monthly) or years (annual), clamping the
+    day to the last valid day of the target month (e.g. 31 Jan + 1 month -> 28/29 Feb)."""
+    if dt is None:
+        dt = now_utc()
+    if cycle == "annual":
+        months = 12 * count
+    else:
+        months = 1 * count
+    y = dt.year + (dt.month - 1 + months) // 12
+    m = (dt.month - 1 + months) % 12 + 1
+    # last day of target month
+    if m == 12:
+        last_day = 31
+    else:
+        last_day = (datetime(y, m + 1, 1, tzinfo=timezone.utc) - timedelta(days=1)).day
+    d = min(dt.day, last_day)
+    return dt.replace(year=y, month=m, day=d)
+
+
+def fmt_date(dt) -> str:
+    d = parse_dt(dt) if not isinstance(dt, datetime) else dt
+    return d.strftime("%d %b %Y") if d else "\u2014"
+
+
+def money(amount) -> str:
+    try:
+        return f"{CURRENCY_SYMBOL}{float(amount):,.2f}"
+    except Exception:
+        return f"{CURRENCY_SYMBOL}0.00"
+
+
 
 
 def hash_password(pw: str) -> str:
@@ -364,7 +422,8 @@ def render_email(tenant: dict, heading: str, paragraphs: List[str], cta: Optiona
 
 
 def _smtp_send(cfg: dict, to: str, subject: str, body: str, html: Optional[str] = None,
-               logo: Optional[bytes] = None, raise_on_error: bool = False) -> bool:
+               logo: Optional[bytes] = None, raise_on_error: bool = False,
+               attachments: Optional[List[dict]] = None) -> bool:
     if not cfg or not cfg.get("smtp_host") or not cfg.get("from_addr"):
         logger.info("Email skipped (SMTP not configured): %s -> %s", subject, to)
         if raise_on_error:
@@ -385,6 +444,15 @@ def _smtp_send(cfg: dict, to: str, subject: str, body: str, html: Optional[str] 
             msg.add_alternative(html, subtype="html")
             if logo:
                 msg.get_payload()[1].add_related(logo, "image", "png", cid="brandlogo")
+        # File attachments (e.g. invoice PDF, manual email uploads)
+        for att in (attachments or []):
+            data = att.get("data")
+            if not data:
+                continue
+            maintype, _, subtype = (att.get("content_type") or "application/octet-stream").partition("/")
+            msg.add_attachment(data, maintype=maintype or "application",
+                               subtype=subtype or "octet-stream",
+                               filename=att.get("filename") or "attachment")
         if port == 465:
             # Implicit TLS (SSL) — used by many providers on 465.
             with smtplib.SMTP_SSL(host, port, timeout=12) as server:
@@ -756,6 +824,7 @@ async def _tenant_overview(t: dict) -> dict:
     bk = await db.bookings.count_documents({"tenant_id": tenant_id})
     owner = await db.users.find_one({"tenant_id": tenant_id, "role": "superadmin"})
     d = tenant_public(t)
+    b = t.get("billing") or {}
     d.update({
         "custom_domain": t.get("custom_domain", ""),
         "locations_count": loc,
@@ -763,6 +832,16 @@ async def _tenant_overview(t: dict) -> dict:
         "created_at": t.get("created_at"),
         "owner_email": owner.get("email") if owner else "",
         "raw_status": t.get("status"),
+        "billing": {
+            "plan_tier": b.get("plan_tier"),
+            "plan_name": b.get("plan_name"),
+            "price": b.get("price"),
+            "cycle": b.get("cycle"),
+            "currency": b.get("currency", CURRENCY),
+            "start_date": b.get("start_date"),
+            "next_due_date": b.get("next_due_date"),
+            "active": bool(b.get("active")),
+        } if b else None,
     })
     return d
 
@@ -1029,6 +1108,408 @@ async def platform_test_email(body: TestEmailIn, user: dict = Depends(get_curren
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not send: {e}")
     return {"ok": True}
+
+
+# =================================================================== BILLING & INVOICING
+async def get_company_settings() -> dict:
+    s = await db.platform_settings.find_one({"key": "company"})
+    if not s:
+        s = dict(COMPANY_DEFAULTS)
+        await db.platform_settings.insert_one(s)
+    for k, v in COMPANY_DEFAULTS.items():
+        s.setdefault(k, v)
+    return s
+
+
+async def platform_cfg() -> Optional[dict]:
+    s = await get_platform_email()
+    brand = os.environ.get("PLATFORM_SUPERADMIN_NAME", "Ivory Digital")
+    return _cfg_from_email_doc(s, brand)
+
+
+class PlanIn(BaseModel):
+    plan_tier: str  # essential | professional | custom
+    plan_name: str
+    price: float
+    cycle: str  # monthly | annual
+
+
+class CompanySettingsIn(BaseModel):
+    heading: Optional[str] = None
+    address: Optional[str] = None
+    email: Optional[str] = None
+    bank_account_name: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_sort_code: Optional[str] = None
+    bank_account_no: Optional[str] = None
+    vat_number: Optional[str] = None
+    payment_terms: Optional[str] = None
+    invoice_prefix: Optional[str] = None
+
+
+class GenerateInvoiceIn(BaseModel):
+    send: bool = True
+
+
+class AttachmentIn(BaseModel):
+    filename: str
+    content_type: Optional[str] = "application/octet-stream"
+    data_base64: str
+
+
+class ManualEmailIn(BaseModel):
+    to: EmailStr
+    subject: str
+    message: str
+    attachments: Optional[List[AttachmentIn]] = None
+
+
+@api.get("/platform/plans")
+async def platform_plans(user: dict = Depends(get_current_platform)):
+    return {"currency": CURRENCY, "symbol": CURRENCY_SYMBOL, "plans": PRESET_PLANS}
+
+
+@api.get("/platform/company-settings")
+async def platform_get_company(user: dict = Depends(get_current_platform)):
+    s = await get_company_settings()
+    s.pop("_id", None)
+    s.pop("next_seq", None)
+    return s
+
+
+@api.put("/platform/company-settings")
+async def platform_put_company(body: CompanySettingsIn, user: dict = Depends(get_current_platform)):
+    update = {k: v for k, v in body.model_dump().items() if v is not None}
+    await db.platform_settings.update_one({"key": "company"}, {"$set": {**update, "key": "company"}}, upsert=True)
+    return {"ok": True}
+
+
+@api.post("/platform/tenants/{tenant_id}/plan")
+async def platform_set_plan(tenant_id: str, body: PlanIn, user: dict = Depends(get_current_platform)):
+    t = await db.tenants.find_one({"_id": oid(tenant_id)})
+    if not t:
+        raise HTTPException(status_code=404, detail="Company not found")
+    if body.cycle not in ("monthly", "annual"):
+        raise HTTPException(status_code=400, detail="Cycle must be monthly or annual")
+    if body.price < 0:
+        raise HTTPException(status_code=400, detail="Price must be a positive number")
+    existing = t.get("billing") or {}
+    # Keep the original start date if a plan is already active (only the plan details change);
+    # otherwise start the billing clock now (option a).
+    start = parse_dt(existing.get("start_date")) if existing.get("active") else None
+    start = start or now_utc()
+    next_due = parse_dt(existing.get("next_due_date")) if existing.get("active") else None
+    if not next_due or next_due < now_utc():
+        next_due = add_cycle(start, body.cycle)
+    billing = {
+        "plan_tier": body.plan_tier,
+        "plan_name": body.plan_name.strip(),
+        "price": round(float(body.price), 2),
+        "cycle": body.cycle,
+        "currency": CURRENCY,
+        "start_date": start.isoformat(),
+        "next_due_date": next_due.isoformat(),
+        "active": True,
+    }
+    await db.tenants.update_one({"_id": t["_id"]}, {"$set": {"billing": billing, "status": "active", "plan": "active"}})
+    fresh = await db.tenants.find_one({"_id": t["_id"]})
+    return await _tenant_overview(fresh)
+
+
+@api.post("/platform/tenants/{tenant_id}/clear-plan")
+async def platform_clear_plan(tenant_id: str, user: dict = Depends(get_current_platform)):
+    t = await db.tenants.find_one({"_id": oid(tenant_id)})
+    if not t:
+        raise HTTPException(status_code=404, detail="Company not found")
+    await db.tenants.update_one({"_id": t["_id"]}, {"$set": {"billing.active": False}})
+    fresh = await db.tenants.find_one({"_id": t["_id"]})
+    return await _tenant_overview(fresh)
+
+
+async def _next_invoice_number(company: dict) -> str:
+    doc = await db.platform_settings.find_one_and_update(
+        {"key": "company"},
+        {"$inc": {"next_seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = (doc or {}).get("next_seq") or COMPANY_DEFAULTS["next_seq"]
+    prefix = company.get("invoice_prefix") or "INV-"
+    return f"{prefix}{seq}"
+
+
+def build_invoice_pdf(invoice: dict, company: dict) -> bytes:
+    """Render a clean A4 invoice PDF (fpdf2). Uses latin-1 core fonts (£ supported)."""
+    from fpdf import FPDF
+
+    def s(txt):  # latin-1 safe
+        return str(txt or "").encode("latin-1", "replace").decode("latin-1")
+
+    pdf = FPDF(format="A4", unit="mm")
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.add_page()
+    gold = (176, 144, 79)
+    ink = (42, 37, 33)
+    grey = (120, 110, 98)
+
+    # Header — issuer
+    pdf.set_xy(15, 16)
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.set_text_color(*gold)
+    pdf.cell(0, 9, s(company.get("heading", "")), ln=1)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(*grey)
+    for line in str(company.get("address", "")).split("\n"):
+        if line.strip():
+            pdf.cell(0, 5, s(line.strip()), ln=1)
+    if company.get("email"):
+        pdf.cell(0, 5, s(company["email"]), ln=1)
+    if company.get("vat_number"):
+        pdf.cell(0, 5, s(f"VAT No: {company['vat_number']}"), ln=1)
+    else:
+        pdf.cell(0, 5, "Not VAT registered", ln=1)
+
+    # INVOICE title block (right)
+    pdf.set_xy(120, 16)
+    pdf.set_font("Helvetica", "B", 26)
+    pdf.set_text_color(*ink)
+    pdf.cell(75, 12, "INVOICE", align="R", ln=1)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(*grey)
+    pdf.set_x(120)
+    pdf.cell(75, 6, s(f"Invoice No:  {invoice.get('number','')}"), align="R", ln=1)
+    pdf.set_x(120)
+    pdf.cell(75, 6, s(f"Issued:  {fmt_date(invoice.get('issued_date'))}"), align="R", ln=1)
+    pdf.set_x(120)
+    pdf.cell(75, 6, s(f"Due:  {fmt_date(invoice.get('due_date'))}"), align="R", ln=1)
+
+    # Divider
+    pdf.set_draw_color(*gold)
+    pdf.set_line_width(0.6)
+    pdf.line(15, 58, 195, 58)
+
+    # Bill to
+    pdf.set_xy(15, 64)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(*gold)
+    pdf.cell(0, 5, "BILL TO", ln=1)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_text_color(*ink)
+    pdf.set_x(15)
+    pdf.cell(0, 6, s(invoice.get("tenant_name", "")), ln=1)
+    if invoice.get("sent_to"):
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(*grey)
+        pdf.set_x(15)
+        pdf.cell(0, 5, s(invoice["sent_to"]), ln=1)
+
+    # Line item table
+    y = 92
+    pdf.set_xy(15, y)
+    pdf.set_fill_color(247, 243, 238)
+    pdf.set_text_color(*ink)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(120, 9, "  Description", border=0, fill=True)
+    pdf.cell(30, 9, "Billing", border=0, fill=True, align="C")
+    pdf.cell(30, 9, "Amount", border=0, fill=True, align="R", ln=1)
+
+    cycle_label = "Annual" if invoice.get("cycle") == "annual" else "Monthly"
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(*ink)
+    pdf.set_x(15)
+    desc = f"  {invoice.get('plan_name','Subscription')}  ({cycle_label} subscription)"
+    pdf.cell(120, 11, s(desc))
+    pdf.cell(30, 11, cycle_label, align="C")
+    pdf.cell(30, 11, s(money(invoice.get("amount", 0))), align="R", ln=1)
+
+    pdf.set_draw_color(230, 224, 214)
+    pdf.set_line_width(0.3)
+    pdf.line(15, pdf.get_y() + 1, 195, pdf.get_y() + 1)
+
+    # Total
+    pdf.set_xy(120, pdf.get_y() + 5)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_text_color(*ink)
+    pdf.cell(45, 9, "Total Due")
+    pdf.set_text_color(*gold)
+    pdf.cell(30, 9, s(money(invoice.get("amount", 0))), align="R", ln=1)
+
+    # Payment details
+    pdf.set_xy(15, pdf.get_y() + 14)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(*gold)
+    pdf.cell(0, 5, "PAYMENT DETAILS", ln=1)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(*ink)
+    rows = [
+        ("Account Name", company.get("bank_account_name", "")),
+        ("Bank", company.get("bank_name", "")),
+        ("Sort Code", company.get("bank_sort_code", "")),
+        ("Account No", company.get("bank_account_no", "")),
+        ("Reference", invoice.get("number", "")),
+    ]
+    for label, val in rows:
+        if not val:
+            continue
+        pdf.set_x(15)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(*grey)
+        pdf.cell(35, 6, s(label))
+        pdf.set_text_color(*ink)
+        pdf.cell(0, 6, s(val), ln=1)
+
+    if company.get("payment_terms"):
+        pdf.set_xy(15, pdf.get_y() + 6)
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.set_text_color(*grey)
+        pdf.multi_cell(180, 5, s(company["payment_terms"]))
+
+    # Footer thank-you
+    pdf.set_xy(15, 272)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(*gold)
+    pdf.cell(0, 5, s(f"Thank you for your business  |  {company.get('heading','')}"), align="C")
+
+    out = pdf.output()
+    return bytes(out)
+
+
+def invoice_public(inv: dict) -> dict:
+    return {
+        "id": str(inv["_id"]),
+        "number": inv.get("number"),
+        "tenant_id": inv.get("tenant_id"),
+        "tenant_name": inv.get("tenant_name"),
+        "issued_date": inv.get("issued_date"),
+        "due_date": inv.get("due_date"),
+        "period_key": inv.get("period_key"),
+        "plan_name": inv.get("plan_name"),
+        "amount": inv.get("amount"),
+        "currency": inv.get("currency", CURRENCY),
+        "cycle": inv.get("cycle"),
+        "status": inv.get("status"),
+        "sent_to": inv.get("sent_to"),
+        "created_at": inv.get("created_at"),
+    }
+
+
+async def create_and_maybe_send_invoice(tenant: dict, send: bool, period_dt: Optional[datetime] = None) -> dict:
+    """Create an invoice record for a tenant's current billing period (idempotent by period_key).
+    Optionally email it (PDF + body) via the platform SMTP identity. Returns the invoice doc."""
+    billing = tenant.get("billing") or {}
+    if not billing.get("active"):
+        raise HTTPException(status_code=400, detail="This company has no active paid plan. Set a plan first.")
+    tenant_id = str(tenant["_id"])
+    company = await get_company_settings()
+    cycle = billing.get("cycle", "monthly")
+    due = period_dt or parse_dt(billing.get("next_due_date")) or now_utc()
+    period_key = f"{tenant_id}:{due.strftime('%Y-%m') if cycle == 'monthly' else due.strftime('%Y')}"
+
+    existing = await db.invoices.find_one({"period_key": period_key})
+    if existing:
+        inv = existing
+    else:
+        number = await _next_invoice_number(company)
+        owner = await db.users.find_one({"tenant_id": tenant_id, "role": "superadmin"})
+        inv = {
+            "number": number,
+            "tenant_id": tenant_id,
+            "tenant_name": tenant.get("name", ""),
+            "issued_date": now_utc().isoformat(),
+            "due_date": due.isoformat(),
+            "period_key": period_key,
+            "plan_name": billing.get("plan_name", "Subscription"),
+            "amount": billing.get("price", 0),
+            "currency": billing.get("currency", CURRENCY),
+            "cycle": cycle,
+            "status": "draft",
+            "sent_to": owner.get("email") if owner else "",
+            "created_at": now_utc().isoformat(),
+        }
+        res = await db.invoices.insert_one(inv)
+        inv["_id"] = res.inserted_id
+
+    if send:
+        cfg = await platform_cfg()
+        if not cfg:
+            raise HTTPException(status_code=400, detail="Configure your platform Email Settings first so invoices can be sent.")
+        to = inv.get("sent_to")
+        if not to:
+            raise HTTPException(status_code=400, detail="No owner email found for this company to send the invoice to.")
+        pdf_bytes = build_invoice_pdf(inv, company)
+        brand = company.get("heading", "Ivory Digital")
+        fake_tenant = {"_id": "platform", "name": brand,
+                       "branding": {"brand_name": brand, "tagline": "Invoice", "primary_color": "#B0904F"}}
+        html = render_email(fake_tenant, f"Invoice {inv['number']}",
+                            [f"Please find attached your invoice <strong>{inv['number']}</strong> for your {inv['plan_name']} subscription.",
+                             f"Amount due: <strong>{money(inv['amount'])}</strong> &nbsp;·&nbsp; Due date: <strong>{fmt_date(inv['due_date'])}</strong>",
+                             "Payment details are included on the attached PDF. Thank you for your business."])
+        att = [{"filename": f"{inv['number']}.pdf", "content_type": "application/pdf", "data": pdf_bytes}]
+        try:
+            await asyncio.to_thread(_smtp_send, cfg, to, f"{brand} — Invoice {inv['number']}",
+                                    f"Please find attached invoice {inv['number']} for {money(inv['amount'])}, due {fmt_date(inv['due_date'])}.",
+                                    html, None, True, att)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invoice created but could not be emailed: {e}")
+        await db.invoices.update_one({"_id": inv["_id"]}, {"$set": {"status": "sent", "sent_to": to}})
+        inv["status"] = "sent"
+    return inv
+
+
+@api.get("/platform/tenants/{tenant_id}/invoices")
+async def platform_list_invoices(tenant_id: str, user: dict = Depends(get_current_platform)):
+    docs = await db.invoices.find({"tenant_id": tenant_id}).sort("created_at", -1).to_list(200)
+    return [invoice_public(d) for d in docs]
+
+
+@api.post("/platform/tenants/{tenant_id}/generate-invoice")
+async def platform_generate_invoice(tenant_id: str, body: GenerateInvoiceIn, user: dict = Depends(get_current_platform)):
+    t = await db.tenants.find_one({"_id": oid(tenant_id)})
+    if not t:
+        raise HTTPException(status_code=404, detail="Company not found")
+    inv = await create_and_maybe_send_invoice(t, send=body.send)
+    return invoice_public(inv)
+
+
+@api.get("/platform/invoices/{invoice_id}/pdf")
+async def platform_invoice_pdf(invoice_id: str, user: dict = Depends(get_current_platform)):
+    inv = await db.invoices.find_one({"_id": oid(invoice_id)})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    company = await get_company_settings()
+    pdf_bytes = build_invoice_pdf(inv, company)
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename={inv.get('number','invoice')}.pdf"})
+
+
+@api.post("/platform/send-email")
+async def platform_send_manual_email(body: ManualEmailIn, user: dict = Depends(get_current_platform)):
+    cfg = await platform_cfg()
+    if not cfg:
+        raise HTTPException(status_code=400, detail="Configure your platform Email Settings first.")
+    attachments = []
+    for a in (body.attachments or []):
+        try:
+            raw = a.data_base64
+            if "," in raw and raw.strip().startswith("data:"):
+                raw = raw.split(",", 1)[1]
+            attachments.append({"filename": a.filename, "content_type": a.content_type,
+                                "data": base64.b64decode(raw)})
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Could not read attachment '{a.filename}'")
+    brand = os.environ.get("PLATFORM_SUPERADMIN_NAME", "Ivory Digital")
+    # Preserve line breaks in the plain message as simple HTML paragraphs
+    paragraphs = [p.strip() for p in body.message.split("\n\n") if p.strip()] or [body.message]
+    paragraphs = [p.replace("\n", "<br>") for p in paragraphs]
+    fake_tenant = {"_id": "platform", "name": brand,
+                   "branding": {"brand_name": brand, "tagline": "", "primary_color": "#B0904F"}}
+    html = render_email(fake_tenant, body.subject, paragraphs)
+    try:
+        await asyncio.to_thread(_smtp_send, cfg, body.to, body.subject, body.message, html, None, True, attachments)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not send: {e}")
+    return {"ok": True}
+
 
 
 
@@ -2209,6 +2690,37 @@ async def reminder_loop():
         await asyncio.sleep(1800)
 
 
+async def billing_loop():
+    """Daily check: auto-generate & send invoices for tenants whose next due date has arrived,
+    then roll their next due date forward by one cycle. Idempotent via invoice period_key."""
+    # small delay so startup/seed completes first
+    await asyncio.sleep(30)
+    while True:
+        try:
+            tenants = await db.tenants.find({"billing.active": True}).to_list(500)
+            for t in tenants:
+                try:
+                    billing = t.get("billing") or {}
+                    if effective_status(t) == "suspended":
+                        continue
+                    due = parse_dt(billing.get("next_due_date"))
+                    if not due or now_utc() < due:
+                        continue
+                    # Generate + send this period's invoice (idempotent), then advance the clock.
+                    await create_and_maybe_send_invoice(t, send=True, period_dt=due)
+                    new_due = add_cycle(due, billing.get("cycle", "monthly"))
+                    # guard against long downtime: roll forward until in the future
+                    while new_due < now_utc():
+                        new_due = add_cycle(new_due, billing.get("cycle", "monthly"))
+                    await db.tenants.update_one({"_id": t["_id"]}, {"$set": {"billing.next_due_date": new_due.isoformat()}})
+                    logger.info("Auto-invoiced %s; next due %s", t.get("name"), new_due.date())
+                except Exception as e:
+                    logger.error("billing loop (tenant %s) error: %s", t.get("slug"), e)
+        except Exception as e:
+            logger.error("billing loop error: %s", e)
+        await asyncio.sleep(6 * 3600)  # re-check every 6 hours
+
+
 # =================================================================== seed + startup
 async def seed():
     await db.tenants.create_index("slug", unique=True)
@@ -2220,6 +2732,8 @@ async def seed():
     await db.appointment_types.create_index([("tenant_id", 1), ("shop_id", 1)])
     await db.availability.create_index([("tenant_id", 1), ("shop_id", 1)])
     await db.settings.create_index("tenant_id", unique=True)
+    await db.invoices.create_index("period_key", unique=True)
+    await db.invoices.create_index([("tenant_id", 1), ("created_at", -1)])
 
     # Migration: ensure every tenant has a shop allowance (default = current shop count)
     async for t in db.tenants.find({"max_locations": {"$exists": False}}):
@@ -2247,6 +2761,7 @@ async def seed():
 async def startup():
     await seed()
     asyncio.create_task(reminder_loop())
+    asyncio.create_task(billing_loop())
 
 
 @app.on_event("shutdown")

@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { LogOut, Plus, ExternalLink, Trash2, Clock, CheckCircle2, PauseCircle, KeyRound, LogIn, Mail } from "lucide-react";
+import { LogOut, Plus, ExternalLink, Trash2, Clock, CheckCircle2, PauseCircle, KeyRound, LogIn, Mail, CreditCard, Receipt, Building2 } from "lucide-react";
 import api, { apiErr } from "@/lib/api";
 import { usePlatformAuth } from "@/context/PlatformAuthContext";
 import { useAuth } from "@/context/AuthContext";
 import { Modal, Field } from "@/components/admin/ui";
 import EmailSettingsForm from "@/components/admin/EmailSettingsForm";
+import { PlanModal, InvoicesModal, CompanySettingsModal, ManualEmailModal } from "@/components/platform/BillingModals";
 
 const STATUS = {
   trial: { bg: "var(--champagne)", c: "var(--gold-deep)", label: "trial" },
@@ -43,6 +44,11 @@ export default function PlatformDashboard() {
   const [emailOpen, setEmailOpen] = useState(false);
   const [allowFor, setAllowFor] = useState(null);
   const [allowVal, setAllowVal] = useState(1);
+  const [plans, setPlans] = useState([]);
+  const [planFor, setPlanFor] = useState(null);
+  const [invoiceFor, setInvoiceFor] = useState(null);
+  const [companyOpen, setCompanyOpen] = useState(false);
+  const [emailToFor, setEmailToFor] = useState(null); // manual email modal (holds prefill)
 
   const origin = window.location.origin;
 
@@ -57,6 +63,10 @@ export default function PlatformDashboard() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { api.get("/platform/plans").then(({ data }) => setPlans(data.plans || [])).catch(() => {}); }, []);
+
+  const gbp = (n) => `£${Number(n || 0).toLocaleString("en-GB", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const fmtDue = (v) => { if (!v) return "\u2014"; try { return new Date(v).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }); } catch { return "\u2014"; } };
 
   const autoSlug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 
@@ -117,6 +127,14 @@ export default function PlatformDashboard() {
         </div>
         <div className="flex items-center gap-4">
           <span className="font-sans-j text-sm hidden sm:inline" style={{ color: "var(--taupe)" }}>{user?.email}</span>
+          <button onClick={() => setCompanyOpen(true)} data-testid="company-settings-btn"
+            className="flex items-center gap-2 font-sans-j text-sm hover:text-[var(--gold-deep)]" style={{ color: "var(--taupe)" }}>
+            <Building2 size={16} /> Company Details
+          </button>
+          <button onClick={() => setEmailToFor({ email: "" })} data-testid="send-email-btn"
+            className="flex items-center gap-2 font-sans-j text-sm hover:text-[var(--gold-deep)]" style={{ color: "var(--taupe)" }}>
+            <Mail size={16} /> Send Email
+          </button>
           <button onClick={() => setEmailOpen(true)} data-testid="platform-email-settings-btn"
             className="flex items-center gap-2 font-sans-j text-sm hover:text-[var(--gold-deep)]" style={{ color: "var(--taupe)" }}>
             <Mail size={16} /> Email Settings
@@ -153,13 +171,13 @@ export default function PlatformDashboard() {
           <table className="w-full text-sm font-sans-j">
             <thead>
               <tr className="text-left" style={{ background: "var(--ivory-2)" }}>
-                {["Company", "URL", "Status", "Trial", "Shops (used/max)", "Bookings", "Actions"].map((h) => (
+                {["Company", "URL", "Status", "Plan", "Next Due", "Trial", "Shops (used/max)", "Bookings", "Actions"].map((h) => (
                   <th key={h} className="field-label p-4 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {tenants.length === 0 && <tr><td colSpan={7} className="p-8 text-center" style={{ color: "var(--taupe)" }}>No companies yet. Create your first client.</td></tr>}
+              {tenants.length === 0 && <tr><td colSpan={9} className="p-8 text-center" style={{ color: "var(--taupe)" }}>No companies yet. Create your first client.</td></tr>}
               {tenants.map((t) => (
                 <tr key={t.id} className="border-t" style={{ borderColor: "var(--line)" }} data-testid={`tenant-row-${t.slug}`}>
                   <td className="p-4">
@@ -173,6 +191,15 @@ export default function PlatformDashboard() {
                     </div>
                   </td>
                   <td className="p-4"><Pill status={t.status} /></td>
+                  <td className="p-4 whitespace-nowrap">
+                    {t.billing?.active
+                      ? <div><p className="text-sm" style={{ color: "var(--charcoal)" }}>{t.billing.plan_name}</p>
+                          <p className="text-xs" style={{ color: "var(--taupe)" }}>{gbp(t.billing.price)} / {t.billing.cycle === "annual" ? "yr" : "mo"}</p></div>
+                      : <span className="text-xs" style={{ color: "var(--taupe)" }}>No plan</span>}
+                  </td>
+                  <td className="p-4 whitespace-nowrap text-sm" style={{ color: "var(--charcoal)" }}>
+                    {t.billing?.active ? fmtDue(t.billing.next_due_date) : "\u2014"}
+                  </td>
                   <td className="p-4 whitespace-nowrap">{t.status === "trial" ? `${t.trial_days_remaining ?? 0} days left` : "\u2014"}</td>
                   <td className="p-4 text-center">
                     <button onClick={() => { setAllowFor(t); setAllowVal(t.max_locations || 1); }} data-testid={`allowance-${t.slug}`}
@@ -184,6 +211,9 @@ export default function PlatformDashboard() {
                   <td className="p-4 text-center">{t.bookings_count}</td>
                   <td className="p-4">
                     <div className="flex flex-wrap gap-2">
+                      <IconBtn icon={CreditCard} label="Plan" onClick={() => setPlanFor(t)} testid={`plan-${t.slug}`} />
+                      <IconBtn icon={Receipt} label="Invoices" onClick={() => setInvoiceFor(t)} testid={`invoices-${t.slug}`} />
+                      <IconBtn icon={Mail} label="Email" onClick={() => setEmailToFor({ email: t.owner_email })} testid={`email-${t.slug}`} />
                       <IconBtn icon={Clock} label="+7 days" onClick={() => act("extend-trial", "Trial extended 7 days", t.id, { days: 7 })} testid={`extend-${t.slug}`} />
                       {t.status !== "active" && <IconBtn icon={CheckCircle2} label="Activate" onClick={() => act("convert-active", "Converted to active", t.id)} testid={`activate-${t.slug}`} />}
                       {t.status === "suspended"
@@ -270,6 +300,11 @@ export default function PlatformDashboard() {
           help="Configure the platform's own outgoing email (used for platform notices). Each company sets its own email separately."
         />
       </Modal>
+
+      <PlanModal tenant={planFor} plans={plans} onClose={() => setPlanFor(null)} onSaved={load} />
+      <InvoicesModal tenant={invoiceFor} onClose={() => setInvoiceFor(null)} />
+      <CompanySettingsModal open={companyOpen} onClose={() => setCompanyOpen(false)} />
+      <ManualEmailModal open={!!emailToFor} prefillTo={emailToFor?.email} onClose={() => setEmailToFor(null)} />
     </div>
   );
 }

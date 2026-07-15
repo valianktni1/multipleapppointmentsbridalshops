@@ -1,0 +1,48 @@
+{
+  "summary": "Completed comprehensive testing of new Superadmin billing features. All backend APIs (77 tests) and frontend UI components passed successfully. Invoice generation, plan management, company settings, and manual email features working as expected. SMTP send paths correctly return 400 errors as intended (SMTP not configured in test environment).",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: GET /api/platform/plans returns Essential (£15/mo, £140/yr) and Professional (£26/mo, £285/yr) plans",
+    "Backend: GET /api/platform/company-settings returns defaults (Weddings By Mark, 220 Ashurst Road, bank details)",
+    "Backend: PUT /api/platform/company-settings persists changes",
+    "Backend: POST /api/platform/tenants/{id}/plan sets billing with correct next_due_date computation (monthly +1 month, annual +1 year)",
+    "Backend: POST /api/platform/tenants/{id}/clear-plan deactivates billing",
+    "Backend: GET /api/platform/tenants includes billing summary (plan_name, price, cycle, next_due_date, active)",
+    "Backend: POST /api/platform/tenants/{id}/generate-invoice (send:false) creates draft invoice with idempotency (same period_key returns same invoice)",
+    "Backend: GET /api/platform/tenants/{id}/invoices lists invoices",
+    "Backend: GET /api/platform/invoices/{invoice_id}/pdf returns valid PDF (2092 bytes, correct content-type, %PDF magic bytes)",
+    "Backend: POST /api/platform/tenants/{id}/generate-invoice (send:true) returns 400 with clear error message (EXPECTED - SMTP not configured)",
+    "Backend: POST /api/platform/send-email returns 400 with clear error message (EXPECTED - SMTP not configured)",
+    "Backend: POST /api/platform/send-email with base64 attachment returns 400 gracefully without crashing",
+    "Frontend: Superadmin login (/superadmin with admin@ivory-digital.uk / IvoryAdmin2025!) works",
+    "Frontend: Dashboard table shows Plan and Next Due columns",
+    "Frontend: Header buttons (Company Details, Send Email, Email Settings) all present and clickable",
+    "Frontend: Company Details modal opens, loads default settings (Weddings By Mark / Ivory Digital, 220 Ashurst Road, bank details), has all fields (heading, address, email, VAT, bank details, payment terms), Save button works",
+    "Frontend: Manual Email modal opens, has To/Subject/Message fields, file attachment support with attachment list and remove buttons, validation requires To + Subject",
+    "Frontend: Plan modal opens with cycle toggle (monthly/annual), preset cards (Essential, Professional, Custom with correct data-testids), editable plan-name-input and plan-price-input, price updates when switching cycles, preset selection updates fields, live next-due preview, save-plan button present",
+    "Frontend: Invoices modal opens, Draft button (gen-draft) creates invoice and it appears in invoices-list, PDF download link present with correct data-testid",
+    "Frontend: Acme Bridal shows Professional plan £26/mo with next due date 15 Aug 2026",
+    "Frontend: Beta Bridal shows trial status with no plan"
+  ],
+  "test_report_links": [
+    "/app/tests/billing_backend_test.py"
+  ],
+  "success_percentage": {
+    "backend": "100% (77/77 tests passed)",
+    "frontend": "100% (all UI components and interactions working)"
+  },
+  "updated_files": [
+    "/app/tests/billing_backend_test.py"
+  ],
+  "action_item_for_main_agent": "",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}

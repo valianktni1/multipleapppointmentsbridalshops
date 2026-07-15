@@ -1,34 +1,42 @@
 [
   {
-    "content": "Create smtpProviders.js constants (data from PDF + explainer + troubleshooting)",
+    "content": "Backend: add PRESET_PLANS/CURRENCY constants, add_cycle helper, extend _smtp_send with attachments",
     "status": "completed"
   },
   {
-    "content": "Add optional size prop to Modal in ui.jsx (backward compatible)",
+    "content": "Backend: company/invoice settings endpoints (GET/PUT) with user's defaults",
     "status": "completed"
   },
   {
-    "content": "Create SmtpGuideModal.jsx (searchable provider table + explainers)",
+    "content": "Backend: set-plan endpoint + billing fields + enrich _tenant_overview",
     "status": "completed"
   },
   {
-    "content": "Update EmailSettingsForm.jsx: add showSmtpGuide prop + button",
+    "content": "Backend: invoice PDF builder (fpdf2), generate-invoice + list + pdf download endpoints",
     "status": "completed"
   },
   {
-    "content": "Pass showSmtpGuide=true only in Account.jsx (tenant)",
+    "content": "Backend: manual send-email endpoint with attachments",
     "status": "completed"
   },
   {
-    "content": "Create HelpGuide.jsx page",
+    "content": "Backend: billing_loop scheduler for auto monthly/annual invoices",
     "status": "completed"
   },
   {
-    "content": "Add help route in App.js + sidebar nav & quick help button in AdminLayout.jsx",
+    "content": "Update requirements.txt + requirements-docker.txt (fpdf2)",
     "status": "completed"
   },
   {
-    "content": "esbuild compile check + screenshot + frontend testing agent",
+    "content": "Frontend: PlatformDashboard Plan + Next Due columns & action buttons",
     "status": "completed"
+  },
+  {
+    "content": "Frontend: BillingModals (Plan, Invoices, Company, ManualEmail)",
+    "status": "completed"
+  },
+  {
+    "content": "Test backend (testing agent) then frontend, fix issues",
+    "status": "in_progress"
   }
 ]
