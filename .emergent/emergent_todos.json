@@ -1,14 +1,26 @@
 [
   {
-    "content": "Backend: billing (plans, PDF invoices, manual email, scheduler)",
+    "content": "Generate branded PWA icons (192/512/maskable/apple-touch) into public/",
     "status": "completed"
   },
   {
-    "content": "Frontend: Plan/Next Due columns + Plan/Invoices/Company/ManualEmail modals",
+    "content": "Add public/manifest.json (default Ivory Digital) + service worker sw.js",
     "status": "completed"
   },
   {
-    "content": "Test backend + frontend (100% pass), clean up test data",
+    "content": "Update index.html: manifest link, theme-color, apple-touch/meta tags",
+    "status": "completed"
+  },
+  {
+    "content": "Register service worker in index.js",
+    "status": "completed"
+  },
+  {
+    "content": "Create InstallPrompt.jsx (Android native prompt, iOS hint, once-dismiss, per-tenant branding, dynamic manifest)",
+    "status": "completed"
+  },
+  {
+    "content": "Mount InstallPrompt in App.js (all areas) + compile check + screenshots",
     "status": "completed"
   }
 ]

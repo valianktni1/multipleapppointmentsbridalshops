@@ -30,6 +30,7 @@ import HelpGuide from "@/pages/admin/HelpGuide";
 
 import PlatformLogin from "@/pages/platform/PlatformLogin";
 import PlatformDashboard from "@/pages/platform/PlatformDashboard";
+import InstallPrompt from "@/components/InstallPrompt";
 
 function App() {
   return (
@@ -72,6 +73,7 @@ function App() {
           </AuthProvider>
         </PlatformAuthProvider>
         <Toaster position="top-center" />
+        <InstallPrompt />
       </BrowserRouter>
     </div>
   );
