@@ -2,9 +2,13 @@ import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 
 /* Search engines render our SPA, so we adjust the <meta name="robots"> tag per
-   route: public marketing + boutique booking pages stay indexable, while the
-   private admin & superadmin panels are set to noindex,nofollow. This complements
-   the path rules in /robots.txt. */
+   route. Public marketing + boutique booking pages stay fully indexable with rich
+   snippets/image previews; private admin & superadmin panels are set to
+   noindex,nofollow plus noarchive,nosnippet (no cached copy, no snippet) — even
+   if a URL ever leaks. This complements the path rules in /robots.txt. */
+const PUBLIC_ROBOTS = "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1";
+const PRIVATE_ROBOTS = "noindex, nofollow, noarchive, nosnippet";
+
 function setRobots(content) {
   let tag = document.querySelector('meta[name="robots"]');
   if (!tag) {
@@ -25,7 +29,7 @@ function isPrivate(pathname) {
 export default function SeoManager() {
   const { pathname } = useLocation();
   useEffect(() => {
-    setRobots(isPrivate(pathname) ? "noindex, nofollow" : "index, follow");
+    setRobots(isPrivate(pathname) ? PRIVATE_ROBOTS : PUBLIC_ROBOTS);
   }, [pathname]);
   return null;
 }
