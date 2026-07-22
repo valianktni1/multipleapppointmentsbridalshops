@@ -1,0 +1,18 @@
+# robots.txt — Ivory Digital
+# Public marketing site + boutique booking pages are crawlable.
+# Private application areas (admin dashboards, superadmin, API) are blocked.
+
+User-agent: *
+Allow: /$
+Allow: /
+
+# Block private / application areas
+Disallow: /superadmin
+Disallow: /*/admin
+Disallow: /*/admin/
+Disallow: /api/
+
+# Block noisy query-string variants
+Disallow: /*?*
+
+Sitemap: https://ivory-digital.uk/sitemap.xml

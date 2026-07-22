@@ -31,6 +31,7 @@ import HelpGuide from "@/pages/admin/HelpGuide";
 import PlatformLogin from "@/pages/platform/PlatformLogin";
 import PlatformDashboard from "@/pages/platform/PlatformDashboard";
 import InstallPrompt from "@/components/InstallPrompt";
+import SeoManager from "@/components/SeoManager";
 
 function App() {
   return (
@@ -74,6 +75,7 @@ function App() {
         </PlatformAuthProvider>
         <Toaster position="top-center" />
         <InstallPrompt />
+        <SeoManager />
       </BrowserRouter>
     </div>
   );
