@@ -2392,7 +2392,9 @@ async def analytics(user: dict = Depends(get_current_user), shop_id: Optional[st
     q: dict = {"tenant_id": user["tenant_id"]}
     if shop_id:
         q["shop_id"] = shop_id
-    docs = await db.bookings.find(q).to_list(20000)
+    docs = await db.bookings.find(q, {
+        "date": 1, "start_time": 1, "status": 1, "shop_name": 1, "answers": 1
+    }).to_list(20000)
     weekday_names = WEEKDAYS
     by_weekday = {w: 0 for w in weekday_names}
     by_hour: dict = {}
@@ -2437,7 +2439,10 @@ async def analytics(user: dict = Depends(get_current_user), shop_id: Optional[st
 # =================================================================== CUSTOMERS
 @api.get("/customers")
 async def list_customers(user: dict = Depends(get_current_user), q: Optional[str] = None):
-    docs = await db.bookings.find({"tenant_id": user["tenant_id"]}).sort([("date", -1)]).to_list(20000)
+    docs = await db.bookings.find({"tenant_id": user["tenant_id"]}, {
+        "customer_email": 1, "customer_name": 1, "customer_phone": 1,
+        "date": 1, "shop_name": 1, "status": 1
+    }).sort([("date", -1)]).to_list(20000)
     people: dict = {}
     for b in docs:
         email = (b.get("customer_email") or "").lower()
@@ -2665,7 +2670,10 @@ async def reminder_loop():
                 cfg = await resolve_cfg(tenant)
                 now = datetime.now()
                 lo, hi = now + timedelta(hours=23), now + timedelta(hours=25)
-                candidates = await db.bookings.find({"tenant_id": tenant_id, "status": "confirmed", "reminder_sent": {"$ne": True}}).to_list(500)
+                candidates = await db.bookings.find({"tenant_id": tenant_id, "status": "confirmed", "reminder_sent": {"$ne": True}}, {
+                    "date": 1, "start_time": 1, "customer_email": 1, "customer_name": 1,
+                    "appointment_type_name": 1, "shop_name": 1, "reference": 1
+                }).to_list(500)
                 for b in candidates:
                     try:
                         dt = datetime.strptime(f"{b['date']} {b['start_time']}", "%Y-%m-%d %H:%M")
