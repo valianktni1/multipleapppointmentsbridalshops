@@ -1375,6 +1375,9 @@ def build_invoice_pdf(invoice: dict, company: dict) -> bytes:
 
 
 def invoice_public(inv: dict) -> dict:
+    status = inv.get("status")
+    due = parse_dt(inv.get("due_date"))
+    overdue = bool(status != "paid" and status != "void" and due and due < now_utc())
     return {
         "id": str(inv["_id"]),
         "number": inv.get("number"),
@@ -1387,7 +1390,9 @@ def invoice_public(inv: dict) -> dict:
         "amount": inv.get("amount"),
         "currency": inv.get("currency", CURRENCY),
         "cycle": inv.get("cycle"),
-        "status": inv.get("status"),
+        "status": status,
+        "overdue": overdue,
+        "paid_at": inv.get("paid_at"),
         "sent_to": inv.get("sent_to"),
         "created_at": inv.get("created_at"),
     }
@@ -1469,6 +1474,28 @@ async def platform_generate_invoice(tenant_id: str, body: GenerateInvoiceIn, use
         raise HTTPException(status_code=404, detail="Company not found")
     inv = await create_and_maybe_send_invoice(t, send=body.send)
     return invoice_public(inv)
+
+
+@api.post("/platform/invoices/{invoice_id}/mark-paid")
+async def platform_mark_invoice_paid(invoice_id: str, user: dict = Depends(get_current_platform)):
+    inv = await db.invoices.find_one({"_id": oid(invoice_id)})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    await db.invoices.update_one({"_id": inv["_id"]},
+                                 {"$set": {"status": "paid", "paid_at": now_utc().isoformat()}})
+    return invoice_public(await db.invoices.find_one({"_id": inv["_id"]}))
+
+
+@api.post("/platform/invoices/{invoice_id}/mark-unpaid")
+async def platform_mark_invoice_unpaid(invoice_id: str, user: dict = Depends(get_current_platform)):
+    inv = await db.invoices.find_one({"_id": oid(invoice_id)})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    # Revert to "sent" if it was emailed, otherwise "draft"
+    new_status = "sent" if inv.get("sent_to") else "draft"
+    await db.invoices.update_one({"_id": inv["_id"]},
+                                 {"$set": {"status": new_status}, "$unset": {"paid_at": ""}})
+    return invoice_public(await db.invoices.find_one({"_id": inv["_id"]}))
 
 
 @api.get("/platform/invoices/{invoice_id}/pdf")

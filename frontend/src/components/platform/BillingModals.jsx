@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { FileText, Send, Download, Paperclip, X, Mail, Sparkles } from "lucide-react";
+import { FileText, Send, Download, Paperclip, X, Mail, Sparkles, Check, RotateCcw } from "lucide-react";
 import api, { apiErr } from "@/lib/api";
 import { Modal, Field } from "@/components/admin/ui";
 
@@ -18,9 +18,10 @@ const addCyclePreview = (cycle) => {
 };
 
 const STATUS_STYLE = {
-  sent: { bg: "#DCEAD9", c: "#3f6b39" },
+  sent: { bg: "var(--champagne)", c: "var(--gold-deep)" },
   paid: { bg: "#DCEAD9", c: "#3f6b39" },
-  draft: { bg: "var(--champagne)", c: "var(--gold-deep)" },
+  draft: { bg: "var(--ivory-2)", c: "var(--taupe)" },
+  overdue: { bg: "#F5D9D4", c: "#9a3f33" },
   void: { bg: "#F0DAD6", c: "#9a4a3f" },
 };
 
@@ -158,6 +159,7 @@ export function InvoicesModal({ tenant, onClose }) {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [filter, setFilter] = useState("all"); // all | unpaid | paid | overdue
 
   const load = useCallback(async () => {
     if (!tenant) return;
@@ -179,6 +181,14 @@ export function InvoicesModal({ tenant, onClose }) {
     finally { setBusy(false); }
   };
 
+  const setPaid = async (inv, paid) => {
+    try {
+      await api.post(`/platform/invoices/${inv.id}/${paid ? "mark-paid" : "mark-unpaid"}`);
+      toast.success(paid ? `Invoice ${inv.number} marked as paid` : `Invoice ${inv.number} marked as unpaid`);
+      load();
+    } catch (e) { toast.error(apiErr(e)); }
+  };
+
   const download = async (inv) => {
     try {
       const r = await api.get(`/platform/invoices/${inv.id}/pdf`, { responseType: "blob" });
@@ -187,6 +197,15 @@ export function InvoicesModal({ tenant, onClose }) {
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) { toast.error(apiErr(e)); }
   };
+
+  const badgeFor = (inv) => (inv.status === "paid" ? "paid" : inv.overdue ? "overdue" : inv.status);
+  const filtered = invoices.filter((inv) => {
+    if (filter === "paid") return inv.status === "paid";
+    if (filter === "unpaid") return inv.status !== "paid";
+    if (filter === "overdue") return inv.overdue;
+    return true;
+  });
+  const unpaidTotal = invoices.filter((i) => i.status !== "paid").reduce((s, i) => s + Number(i.amount || 0), 0);
 
   const billing = tenant?.billing;
 
@@ -211,32 +230,69 @@ export function InvoicesModal({ tenant, onClose }) {
             </div>
           </div>
 
+          {/* Filter + outstanding total */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex gap-1" data-testid="invoice-filter">
+              {["all", "unpaid", "paid", "overdue"].map((f) => (
+                <button key={f} type="button" onClick={() => setFilter(f)} data-testid={`filter-${f}`}
+                  className="px-3 py-1.5 font-sans-j text-xs capitalize border transition-colors"
+                  style={{
+                    background: filter === f ? "var(--charcoal)" : "transparent",
+                    color: filter === f ? "var(--ivory)" : "var(--ink)",
+                    borderColor: filter === f ? "var(--charcoal)" : "var(--line)",
+                  }}>
+                  {f}
+                </button>
+              ))}
+            </div>
+            {unpaidTotal > 0 && (
+              <p className="font-sans-j text-sm" data-testid="outstanding-total" style={{ color: "var(--charcoal)" }}>
+                Outstanding: <b style={{ color: "#9a3f33" }}>{GBP(unpaidTotal)}</b>
+              </p>
+            )}
+          </div>
+
           <div className="border overflow-x-auto" style={{ borderColor: "var(--line)" }} data-testid="invoices-list">
             <table className="w-full text-sm font-sans-j">
               <thead>
                 <tr className="text-left" style={{ background: "var(--ivory-2)" }}>
-                  {["Invoice", "Issued", "Due", "Amount", "Status", ""].map((h) => (
+                  {["Invoice", "Issued", "Due", "Amount", "Status", "Actions"].map((h) => (
                     <th key={h} className="field-label p-3 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {loading && <tr><td colSpan={6} className="p-6 text-center" style={{ color: "var(--taupe)" }}>Loading…</td></tr>}
-                {!loading && invoices.length === 0 && <tr><td colSpan={6} className="p-6 text-center" style={{ color: "var(--taupe)" }} data-testid="invoices-empty">No invoices yet.</td></tr>}
-                {invoices.map((inv) => {
-                  const st = STATUS_STYLE[inv.status] || STATUS_STYLE.draft;
+                {!loading && filtered.length === 0 && <tr><td colSpan={6} className="p-6 text-center" style={{ color: "var(--taupe)" }} data-testid="invoices-empty">No invoices{filter !== "all" ? ` (${filter})` : ""} yet.</td></tr>}
+                {filtered.map((inv) => {
+                  const key = badgeFor(inv);
+                  const st = STATUS_STYLE[key] || STATUS_STYLE.draft;
+                  const isPaid = inv.status === "paid";
                   return (
                     <tr key={inv.id} className="border-t" style={{ borderColor: "var(--line)" }} data-testid={`invoice-${inv.number}`}>
                       <td className="p-3 font-mono">{inv.number}</td>
                       <td className="p-3 whitespace-nowrap">{fmtDate(inv.issued_date)}</td>
                       <td className="p-3 whitespace-nowrap">{fmtDate(inv.due_date)}</td>
                       <td className="p-3">{GBP(inv.amount)}</td>
-                      <td className="p-3"><span className="eyebrow px-2 py-1 inline-block" style={{ background: st.bg, color: st.c, fontSize: "0.5rem" }}>{inv.status}</span></td>
+                      <td className="p-3"><span className="eyebrow px-2 py-1 inline-block capitalize" data-testid={`status-${inv.number}`} style={{ background: st.bg, color: st.c, fontSize: "0.5rem" }}>{key}</span></td>
                       <td className="p-3">
-                        <button onClick={() => download(inv)} data-testid={`download-${inv.number}`}
-                          className="flex items-center gap-1 text-xs hover:text-[var(--gold-deep)]" style={{ color: "var(--gold-deep)" }}>
-                          <Download size={13} /> PDF
-                        </button>
+                        <div className="flex items-center gap-3 whitespace-nowrap">
+                          {isPaid ? (
+                            <button onClick={() => setPaid(inv, false)} data-testid={`unpaid-${inv.number}`}
+                              className="flex items-center gap-1 text-xs hover:text-[var(--charcoal)]" style={{ color: "var(--taupe)" }}>
+                              <RotateCcw size={13} /> Unpaid
+                            </button>
+                          ) : (
+                            <button onClick={() => setPaid(inv, true)} data-testid={`paid-${inv.number}`}
+                              className="flex items-center gap-1 text-xs font-medium" style={{ color: "#3f6b39" }}>
+                              <Check size={14} /> Mark paid
+                            </button>
+                          )}
+                          <button onClick={() => download(inv)} data-testid={`download-${inv.number}`}
+                            className="flex items-center gap-1 text-xs hover:text-[var(--gold-deep)]" style={{ color: "var(--gold-deep)" }}>
+                            <Download size={13} /> PDF
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

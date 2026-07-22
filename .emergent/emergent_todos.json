@@ -1,26 +1,14 @@
 [
   {
-    "content": "Generate branded PWA icons (192/512/maskable/apple-touch) into public/",
+    "content": "Backend: add paid_at + overdue to invoice_public; add mark-paid / mark-unpaid endpoints",
     "status": "completed"
   },
   {
-    "content": "Add public/manifest.json (default Ivory Digital) + service worker sw.js",
+    "content": "Frontend: Mark Paid/Unpaid buttons, Overdue + Paid badges, status filter in InvoicesModal",
     "status": "completed"
   },
   {
-    "content": "Update index.html: manifest link, theme-color, apple-touch/meta tags",
-    "status": "completed"
-  },
-  {
-    "content": "Register service worker in index.js",
-    "status": "completed"
-  },
-  {
-    "content": "Create InstallPrompt.jsx (Android native prompt, iOS hint, once-dismiss, per-tenant branding, dynamic manifest)",
-    "status": "completed"
-  },
-  {
-    "content": "Mount InstallPrompt in App.js (all areas) + compile check + screenshots",
+    "content": "Test (backend curl + screenshot) and verify",
     "status": "completed"
   }
 ]
