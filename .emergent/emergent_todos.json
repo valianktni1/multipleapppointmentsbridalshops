@@ -1,14 +1,18 @@
 [
   {
-    "content": "Backend: add paid_at + overdue to invoice_public; add mark-paid / mark-unpaid endpoints",
+    "content": "Backend: set must_change_password=true on tenant owner create, owner pw reset, admin create, admin pw reset",
     "status": "completed"
   },
   {
-    "content": "Frontend: Mark Paid/Unpaid buttons, Overdue + Paid badges, status filter in InvoicesModal",
+    "content": "Backend: add /auth/set-initial-password endpoint + clear flag on normal change-password + guard writes",
     "status": "completed"
   },
   {
-    "content": "Test (backend curl + screenshot) and verify",
+    "content": "Frontend: ForcePasswordChange screen gated in AdminLayout until flag cleared",
     "status": "completed"
+  },
+  {
+    "content": "Verify with testing_agent (required for bug/feature)",
+    "status": "in_progress"
   }
 ]

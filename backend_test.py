@@ -450,6 +450,82 @@ def main():
     except Exception as e:
         test("Platform tenant actions", False, f"Exception: {e}")
 
+    # ========== 12. FORCE PASSWORD CHANGE ON FIRST LOGIN ==========
+    print("\n[12] FORCE PASSWORD CHANGE ON FIRST LOGIN")
+    try:
+        # Login with flowtest account (must_change_password should be true)
+        r = requests.post(f"{BASE}/auth/login", headers={"X-Tenant": "flowtest"}, json={
+            "email": "owner@flowtest.com", "password": "TempPass123"
+        }, timeout=10)
+        test("Flowtest login", r.status_code == 200, f"Status: {r.status_code}")
+        if r.status_code == 200:
+            flowtest_tok = r.json().get("access_token")
+            test("Flowtest token received", bool(flowtest_tok))
+            
+            # Check /auth/me returns must_change_password flag
+            r = requests.get(f"{BASE}/auth/me", headers=h(flowtest_tok, "flowtest"), timeout=10)
+            test("GET /auth/me for flowtest", r.status_code == 200, f"Status: {r.status_code}")
+            if r.status_code == 200:
+                me = r.json()
+                test("must_change_password is true", me.get("must_change_password") == True, 
+                     f"must_change_password: {me.get('must_change_password')}")
+            
+            # Test write endpoint blocked with 403
+            r = requests.post(f"{BASE}/shops", headers=h(flowtest_tok, "flowtest"), json={
+                "name": "Test Shop", "address": "123 Test St"
+            }, timeout=10)
+            test("Write blocked while must_change_password", r.status_code == 403, 
+                 f"Status: {r.status_code}, Response: {r.text[:100]}")
+            
+            # Test set-initial-password: mismatched passwords
+            r = requests.post(f"{BASE}/auth/set-initial-password", headers=h(flowtest_tok, "flowtest"), json={
+                "new_password": "NewPass123", "confirm_password": "DifferentPass"
+            }, timeout=10)
+            test("Mismatched passwords rejected", r.status_code == 400, f"Status: {r.status_code}")
+            
+            # Test set-initial-password: same as temp password
+            r = requests.post(f"{BASE}/auth/set-initial-password", headers=h(flowtest_tok, "flowtest"), json={
+                "new_password": "TempPass123", "confirm_password": "TempPass123"
+            }, timeout=10)
+            test("Same as temp password rejected", r.status_code == 400, f"Status: {r.status_code}")
+            
+            # Test set-initial-password: valid new password
+            r = requests.post(f"{BASE}/auth/set-initial-password", headers=h(flowtest_tok, "flowtest"), json={
+                "new_password": "MyBrandNew1", "confirm_password": "MyBrandNew1"
+            }, timeout=10)
+            test("Valid new password accepted", r.status_code == 200, f"Status: {r.status_code}")
+            
+            # Re-check /auth/me - must_change_password should now be false
+            r = requests.get(f"{BASE}/auth/me", headers=h(flowtest_tok, "flowtest"), timeout=10)
+            if r.status_code == 200:
+                me = r.json()
+                test("must_change_password cleared after change", me.get("must_change_password") == False, 
+                     f"must_change_password: {me.get('must_change_password')}")
+            
+            # Test write endpoint now works
+            r = requests.post(f"{BASE}/shops", headers=h(flowtest_tok, "flowtest"), json={
+                "name": "Test Shop After PW Change", "address": "123 Test St"
+            }, timeout=10)
+            test("Write allowed after password change", r.status_code == 200, 
+                 f"Status: {r.status_code}")
+            
+            # Re-login with new password
+            r = requests.post(f"{BASE}/auth/login", headers={"X-Tenant": "flowtest"}, json={
+                "email": "owner@flowtest.com", "password": "MyBrandNew1"
+            }, timeout=10)
+            test("Re-login with new password", r.status_code == 200, f"Status: {r.status_code}")
+            if r.status_code == 200:
+                new_tok = r.json().get("access_token")
+                r = requests.get(f"{BASE}/auth/me", headers=h(new_tok, "flowtest"), timeout=10)
+                if r.status_code == 200:
+                    me = r.json()
+                    test("No force flag on re-login", me.get("must_change_password") == False, 
+                         f"must_change_password: {me.get('must_change_password')}")
+        else:
+            print("      ⚠️  Flowtest account not available or credentials incorrect")
+    except Exception as e:
+        test("Force password change flow", False, f"Exception: {e}")
+
     # ========== SUMMARY ==========
     print("\n" + "="*70)
     print(f"TEST SUMMARY: {tests_passed}/{tests_run} passed, {tests_failed} failed")

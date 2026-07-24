@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
 import { LayoutDashboard, CalendarDays, Clock, Tags, Users, Settings as Cog, UserCircle, LogOut, Sliders, ListChecks, BarChart3, Contact, MapPin, Palette, AlertTriangle, LifeBuoy } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Wordmark, DesignerCredit } from "@/components/Brand";
+import ForcePasswordChange from "@/components/admin/ForcePasswordChange";
 
 const NAV = [
   { seg: "help", icon: LifeBuoy, label: "Help & Guide", highlight: true },
@@ -54,6 +55,10 @@ export default function AdminLayout() {
   const brand = user?.tenant?.branding?.brand_name || "your";
 
   const doLogout = () => { logout(); nav(`/${tenant}/admin/login`); };
+
+  if (user?.must_change_password) {
+    return <ForcePasswordChange brand={brand === "your" ? "your account" : brand} onLogout={doLogout} />;
+  }
 
   if (status === "expired" || status === "suspended") {
     return (

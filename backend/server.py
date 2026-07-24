@@ -283,6 +283,8 @@ async def get_user_tenant(user: dict = Depends(get_current_user)) -> dict:
 
 async def require_tenant_write(user: dict = Depends(get_current_user)) -> dict:
     """Guard for management mutations: block when trial expired or suspended."""
+    if user.get("must_change_password"):
+        raise HTTPException(status_code=403, detail="Please set your own password before continuing.")
     tenant = await db.tenants.find_one({"_id": oid(user["tenant_id"])})
     if not tenant:
         raise HTTPException(status_code=404, detail="Company not found")
@@ -606,6 +608,11 @@ class ChangePwIn(BaseModel):
     new_password: str = Field(min_length=6)
 
 
+class SetInitialPwIn(BaseModel):
+    new_password: str = Field(min_length=8)
+    confirm_password: str
+
+
 class Enable2FAIn(BaseModel):
     code: str
 
@@ -909,6 +916,7 @@ async def platform_create_tenant(body: TenantCreateIn, user: dict = Depends(get_
             "password_hash": hash_password(body.owner_password),
             "role": "superadmin",
             "active": True,
+            "must_change_password": True,
             "totp_enabled": False,
             "totp_secret": None,
             "created_at": started.isoformat(),
@@ -1005,7 +1013,7 @@ async def platform_reset_owner_pw(tenant_id: str, body: ResetOwnerPwIn, user: di
     owner = await db.users.find_one({"tenant_id": tenant_id, "role": "superadmin"})
     if not owner:
         raise HTTPException(status_code=404, detail="Owner account not found")
-    await db.users.update_one({"_id": owner["_id"]}, {"$set": {"password_hash": hash_password(body.password)}})
+    await db.users.update_one({"_id": owner["_id"]}, {"$set": {"password_hash": hash_password(body.password), "must_change_password": True}})
     return {"ok": True}
 
 
@@ -1657,7 +1665,21 @@ async def test_my_email_settings(body: TestEmailIn, user: dict = Depends(get_cur
 async def change_password(body: ChangePwIn, user: dict = Depends(get_current_user)):
     if not verify_password(body.current_password, user["password_hash"]):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
-    await db.users.update_one({"_id": user["_id"]}, {"$set": {"password_hash": hash_password(body.new_password)}})
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"password_hash": hash_password(body.new_password), "must_change_password": False}})
+    return {"ok": True}
+
+
+@api.post("/auth/set-initial-password")
+async def set_initial_password(body: SetInitialPwIn, user: dict = Depends(get_current_user)):
+    """First-login flow: a user issued a temporary password must set their own
+    password (entered twice) before they can use the system."""
+    if not user.get("must_change_password"):
+        raise HTTPException(status_code=400, detail="Password change is not required for this account")
+    if body.new_password != body.confirm_password:
+        raise HTTPException(status_code=400, detail="The two passwords do not match")
+    if verify_password(body.new_password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Please choose a new password different from your temporary one")
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"password_hash": hash_password(body.new_password), "must_change_password": False}})
     return {"ok": True}
 
 
@@ -1713,6 +1735,7 @@ async def create_admin(body: AdminCreateIn, user: dict = Depends(require_company
         "password_hash": hash_password(body.password),
         "role": "admin",
         "active": True,
+        "must_change_password": True,
         "totp_enabled": False,
         "totp_secret": None,
         "created_at": now_utc().isoformat(),
@@ -1736,6 +1759,7 @@ async def update_admin(admin_id: str, body: AdminUpdateIn, user: dict = Depends(
         update["active"] = body.active
     if body.password:
         update["password_hash"] = hash_password(body.password)
+        update["must_change_password"] = True
     if update:
         await db.users.update_one({"_id": target["_id"]}, {"$set": update})
     doc = await db.users.find_one({"_id": target["_id"]})

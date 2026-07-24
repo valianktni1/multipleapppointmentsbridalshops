@@ -444,6 +444,14 @@ export default function Booking() {
       <footer className="band-champagne py-10 px-6 text-center">
         <Wordmark size="text-3xl" />
         {tctx?.tenant?.branding?.tagline && <p className="eyebrow mt-3" style={{ fontSize: "0.58rem" }}>{tctx.tenant.branding.tagline}</p>}
+        {tctx?.tenant?.slug && (
+          <div className="mt-5">
+            <Link to={`/${tctx.tenant.slug}/admin/login`} data-testid="staff-login-link"
+              className="eyebrow hover:text-[var(--gold-deep)] transition-colors" style={{ fontSize: "0.55rem", color: "var(--taupe)" }}>
+              Staff Login
+            </Link>
+          </div>
+        )}
       </footer>
       <DesignerCredit />
     </div>
