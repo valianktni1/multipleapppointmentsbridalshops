@@ -35,6 +35,9 @@ export default function PlatformDashboard() {
   const { loginWithToken } = useAuth();
   const nav = useNavigate();
   const [tenants, setTenants] = useState([]);
+  const [companySearch, setCompanySearch] = useState("");
+  const [companyStatus, setCompanyStatus] = useState("");
+  const [companyLoadError, setCompanyLoadError] = useState(false);
   const [stats, setStats] = useState(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: "", slug: "", custom_domain: "", owner_name: "", owner_email: "", owner_password: "", trial_days: 7, locations: 1 });
@@ -51,6 +54,22 @@ export default function PlatformDashboard() {
   const [emailToFor, setEmailToFor] = useState(null); // manual email modal (holds prefill)
 
   const origin = window.location.origin;
+  const term = companySearch.trim().toLowerCase();
+  const visibleTenants = tenants.filter((tenant) =>
+    (!companyStatus || tenant.status === companyStatus) &&
+    [tenant.name, tenant.slug, tenant.owner_email].some((value) => value?.toLowerCase().includes(term))
+  );
+
+  const copyLinks = async (tenant) => {
+    const publicLink = `${origin}/${tenant.slug}/`;
+    const staffLink = `${origin}/${tenant.slug}/admin/login`;
+    try {
+      await navigator.clipboard.writeText(`Customer booking: ${publicLink}\nStaff login: ${staffLink}`);
+      toast.success("Booking and staff login links copied");
+    } catch {
+      toast.error("Couldn’t copy the links. You can open them from the URL column.");
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -58,8 +77,8 @@ export default function PlatformDashboard() {
         api.get("/platform/tenants"),
         api.get("/platform/stats"),
       ]);
-      setTenants(t); setStats(s);
-    } catch (e) { toast.error(apiErr(e)); }
+      setTenants(t); setStats(s); setCompanyLoadError(false);
+    } catch (e) { setCompanyLoadError(true); toast.error(apiErr(e)); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -167,6 +186,18 @@ export default function PlatformDashboard() {
           </div>
         )}
 
+        <div className="card-wtb p-4 mb-4 grid gap-4 sm:grid-cols-2">
+          <Field label="Find a company">
+            <input className="input-wtb" type="search" placeholder="Company, owner email or URL"
+              value={companySearch} onChange={(e) => setCompanySearch(e.target.value)} />
+          </Field>
+          <Field label="Company status">
+            <select className="input-wtb" value={companyStatus} onChange={(e) => setCompanyStatus(e.target.value)}>
+              <option value="">All statuses</option>
+              {Object.entries(STATUS).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}
+            </select>
+          </Field>
+        </div>
         <div className="card-wtb overflow-x-auto" data-testid="tenants-table">
           <table className="w-full text-sm font-sans-j">
             <thead>
@@ -177,8 +208,12 @@ export default function PlatformDashboard() {
               </tr>
             </thead>
             <tbody>
-              {tenants.length === 0 && <tr><td colSpan={9} className="p-8 text-center" style={{ color: "var(--taupe)" }}>No companies yet. Create your first client.</td></tr>}
-              {tenants.map((t) => (
+              {visibleTenants.length === 0 && <tr><td colSpan={9} className="p-8 text-center" style={{ color: "var(--taupe)" }}>
+                {companyLoadError ? <><span role="alert">Couldn’t load companies. </span><button onClick={load} className="underline">Try again</button></>
+                  : !stats ? <span role="status">Loading companies…</span>
+                  : tenants.length === 0 ? "No companies yet. Create your first client." : "No companies match your filters."}
+              </td></tr>}
+              {visibleTenants.map((t) => (
                 <tr key={t.id} className="border-t" style={{ borderColor: "var(--line)" }} data-testid={`tenant-row-${t.slug}`}>
                   <td className="p-4">
                     <p className="font-serif-c text-lg">{t.name}</p>
@@ -187,7 +222,8 @@ export default function PlatformDashboard() {
                   <td className="p-4">
                     <div className="flex flex-col gap-1">
                       <a href={`${origin}/${t.slug}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs hover:text-[var(--gold-deep)]" style={{ color: "var(--gold-deep)" }} data-testid={`tenant-public-${t.slug}`}>/{t.slug} <ExternalLink size={11} /></a>
-                      <a href={`${origin}/${t.slug}/admin`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs hover:text-[var(--gold-deep)]" style={{ color: "var(--taupe)" }}>/{t.slug}/admin <ExternalLink size={11} /></a>
+                      <a href={`${origin}/${t.slug}/admin/login`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs hover:text-[var(--gold-deep)]" style={{ color: "var(--taupe)" }}>Staff login <ExternalLink size={11} /></a>
+                      <button onClick={() => copyLinks(t)} className="text-xs text-left underline" type="button">Copy both links</button>
                     </div>
                   </td>
                   <td className="p-4"><Pill status={t.status} /></td>

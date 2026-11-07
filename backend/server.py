@@ -2284,7 +2284,7 @@ async def paypal_capture_order(reference: str, order_id: str, request: Request):
 
 
 # =================================================================== BOOKINGS (admin)
-def _booking_query(tenant_id, shop_id, status, date_from, date_to):
+def _booking_query(tenant_id, shop_id, status, date_from, date_to, search=None):
     query: dict = {"tenant_id": tenant_id}
     if shop_id:
         query["shop_id"] = shop_id
@@ -2296,21 +2296,29 @@ def _booking_query(tenant_id, shop_id, status, date_from, date_to):
             query["date"]["$gte"] = date_from
         if date_to:
             query["date"]["$lte"] = date_to
+    if search and (term := search.strip()[:100]):
+        match = {"$regex": re.escape(term), "$options": "i"}
+        query["$or"] = [
+            {field: match} for field in
+            ("reference", "customer_name", "customer_email", "customer_phone")
+        ]
     return query
 
 
 @api.get("/bookings")
 async def list_bookings(user: dict = Depends(get_current_user), shop_id: Optional[str] = None,
-                        status: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None):
-    query = _booking_query(user["tenant_id"], shop_id, status, date_from, date_to)
+                        status: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None,
+                        search: Optional[str] = None):
+    query = _booking_query(user["tenant_id"], shop_id, status, date_from, date_to, search)
     docs = await db.bookings.find(query).sort([("date", 1), ("start_time", 1)]).to_list(2000)
     return [clean(d) for d in docs]
 
 
 @api.get("/bookings/export.csv")
 async def export_bookings_csv(user: dict = Depends(get_current_user), shop_id: Optional[str] = None,
-                              status: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None):
-    query = _booking_query(user["tenant_id"], shop_id, status, date_from, date_to)
+                              status: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None,
+                        search: Optional[str] = None):
+    query = _booking_query(user["tenant_id"], shop_id, status, date_from, date_to, search)
     docs = await db.bookings.find(query).sort([("date", 1), ("start_time", 1)]).to_list(5000)
     out = io.StringIO()
     w = csv.writer(out)
