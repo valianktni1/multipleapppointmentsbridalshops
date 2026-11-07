@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import api, { apiErr } from "@/lib/api";
@@ -8,24 +8,56 @@ export default function Bookings() {
   const [shops, setShops] = useState([]);
   const [rows, setRows] = useState([]);
   const [filters, setFilters] = useState({ shop_id: "", status: "" });
+  const [range, setRange] = useState("upcoming");
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const detailRequest = useRef(0);
   const [active, setActive] = useState(null);
   const [resched, setResched] = useState({ date: "", start_time: "", admin_notes: "" });
   const [series, setSeries] = useState([]);
   const [types, setTypes] = useState([]);
   const [fu, setFu] = useState(null); // follow-up form: {date, start_time, appointment_type_id, label}
 
-  const load = useCallback(async () => {
-    const params = {};
-    if (filters.shop_id) params.shop_id = filters.shop_id;
-    if (filters.status) params.status = filters.status;
-    try { const { data } = await api.get("/bookings", { params }); setRows(data); } catch (e) { toast.error(apiErr(e)); }
-  }, [filters]);
+  const params = useMemo(() => {
+    const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/London" }).format(new Date());
+    return {
+      ...filters,
+      date_from: range === "all" ? undefined : today,
+      date_to: range === "today" ? today : undefined,
+      search: query || undefined,
+    };
+  }, [filters, query, range]);
 
-  useEffect(() => { api.get("/shops").then((r) => setShops(r.data)); }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(search.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    api.get("/shops").then((r) => setShops(r.data)).catch((e) => toast.error(apiErr(e)));
+  }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setLoadError(false);
+    api.get("/bookings", { params, signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setRows(data); })
+      .catch(() => { if (!controller.signal.aborted) setLoadError(true); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [params, refresh]);
+
+  const load = () => setRefresh((n) => n + 1);
+  const closeDetail = () => {
+    detailRequest.current += 1;
+    setActive(null);
+  };
 
   const setStatus = async (b, status) => {
-    try { await api.patch(`/bookings/${b.id}`, { status }); toast.success(`Marked ${status.replace("_", "-")}`); load(); if (active?.id === b.id) setActive({ ...active, status }); }
+    try { await api.patch(`/bookings/${b.id}`, { status }); toast.success(`Marked ${status.replace("_", "-")}`); load(); setActive((current) => current?.id === b.id ? { ...current, status } : current); }
     catch (e) { toast.error(apiErr(e)); }
   };
 
@@ -33,39 +65,41 @@ export default function Bookings() {
     try {
       const { data } = await api.patch(`/bookings/${b.id}`, { payment_status });
       toast.success("Payment updated"); load();
-      if (active?.id === b.id) setActive(data);
+      setActive((current) => current?.id === b.id ? data : current);
     } catch (e) { toast.error(apiErr(e)); }
   };
 
   const openDetail = async (b) => {
-    setActive(b); setFu(null);
+    const request = ++detailRequest.current;
+    setActive(b); setFu(null); setSeries([]); setTypes([]);
     setResched({ date: b.date, start_time: b.start_time, admin_notes: b.admin_notes || "" });
     try {
       const [{ data: s }, { data: t }] = await Promise.all([
         api.get(`/bookings/${b.id}/series`),
         api.get(`/shops/${b.shop_id}/appointment-types`),
       ]);
-      setSeries(s); setTypes(t);
-    } catch { setSeries([]); setTypes([]); }
+      if (request === detailRequest.current) { setSeries(s); setTypes(t); }
+    } catch (e) { if (request === detailRequest.current) toast.error(apiErr(e)); }
   };
 
   const startFollowUp = () => setFu({ date: "", start_time: "", appointment_type_id: active.appointment_type_id, label: "" });
 
   const saveFollowUp = async () => {
+    const request = detailRequest.current;
     if (!fu.date || !fu.start_time) { toast.error("Please choose a date and time"); return; }
     try {
       await api.post(`/bookings/${active.id}/follow-up`, fu);
       toast.success("Follow-up appointment created");
-      setFu(null); load();
-      const { data: s } = await api.get(`/bookings/${active.id}/series`); setSeries(s);
+      load();
+      if (request !== detailRequest.current) return;
+      setFu(null);
+      const { data: s } = await api.get(`/bookings/${active.id}/series`);
+      if (request === detailRequest.current) setSeries(s);
     } catch (e) { toast.error(apiErr(e)); }
   };
 
   const exportCsv = async () => {
     try {
-      const params = {};
-      if (filters.shop_id) params.shop_id = filters.shop_id;
-      if (filters.status) params.status = filters.status;
       const res = await api.get("/bookings/export.csv", { params, responseType: "blob" });
       const url = URL.createObjectURL(res.data);
       const a = document.createElement("a");
@@ -75,18 +109,33 @@ export default function Bookings() {
   };
 
   const saveResched = async () => {
+    const request = detailRequest.current;
     try {
       await api.patch(`/bookings/${active.id}`, resched);
-      toast.success("Booking updated"); setActive(null); load();
+      toast.success("Booking updated"); load();
+      if (request === detailRequest.current) closeDetail();
     } catch (e) { toast.error(apiErr(e)); }
   };
 
   return (
     <div className="reveal-up">
       <PageHead eyebrow="Manage" title="Bookings">
-        <button className="btn-wtb btn-ghost-wtb" onClick={exportCsv} data-testid="export-csv">Export CSV</button>
+        <button className="btn-wtb btn-ghost-wtb" onClick={exportCsv} disabled={loading || loadError || query !== search.trim()} data-testid="export-csv">Export CSV</button>
       </PageHead>
       <Panel className="mb-6">
+        <div className="flex flex-wrap gap-2 mb-4" aria-label="Date range" role="group">
+          {[["upcoming", "Upcoming"], ["today", "Today"], ["all", "All dates"]].map(([value, label]) => (
+            <button key={value} type="button" aria-pressed={range === value}
+              className={`btn-wtb ${range === value ? "btn-gold" : "btn-ghost-wtb"}`}
+              onClick={() => setRange(value)}>{label}</button>
+          ))}
+        </div>
+        <div className="mb-4">
+          <Field label="Find a booking">
+            <input className="input-wtb" type="search" maxLength={100} value={search}
+              onChange={(e) => setSearch(e.target.value)} placeholder="Name, email, phone or reference" />
+          </Field>
+        </div>
         <div className="flex flex-wrap gap-4 items-end">
           <Field label="Boutique">
             <select className="input-wtb" value={filters.shop_id} data-testid="filter-shop"
@@ -105,42 +154,62 @@ export default function Bookings() {
         </div>
       </Panel>
 
-      <div className="card-wtb overflow-x-auto" data-testid="bookings-table">
-        <table className="w-full text-sm font-sans-j">
-          <thead>
-            <tr className="text-left" style={{ background: "var(--ivory-2)" }}>
-              {["Date", "Time", "Customer", "Boutique", "Appointment", "Status", ""].map((h) => (
-                <th key={h} className="field-label p-4">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && <tr><td colSpan={7} className="p-6 text-center" style={{ color: "var(--taupe)" }}>No bookings found.</td></tr>}
+      {loading ? <p role="status">Loading bookings…</p> : loadError ? (
+        <div role="alert" className="card-wtb p-5">
+          <p className="mb-3">We couldn’t load the diary.</p>
+          <button className="btn-wtb btn-ghost-wtb" onClick={load}>Try again</button>
+        </div>
+      ) : rows.length === 0 ? <p role="status">No bookings match these filters.</p> : (
+        <>
+          <div className="grid gap-3 lg:hidden">
             {rows.map((b) => (
-              <tr key={b.id} className="border-t hover:bg-[var(--ivory-2)] cursor-pointer" style={{ borderColor: "var(--line)" }}
-                onClick={() => openDetail(b)} data-testid={`booking-row-${b.reference}`}>
-                <td className="p-4 whitespace-nowrap">{format(new Date(b.date), "EEE d MMM")}</td>
-                <td className="p-4" style={{ color: "var(--gold-deep)" }}>{b.start_time}</td>
-                <td className="p-4">{b.customer_name}</td>
-                <td className="p-4">{b.shop_name}</td>
-                <td className="p-4">{b.appointment_type_name}</td>
-                <td className="p-4"><StatusBadge status={b.status} /></td>
-                <td className="p-4 text-right eyebrow" style={{ color: "var(--gold-deep)", fontSize: "0.55rem" }}>View</td>
-              </tr>
+              <button key={b.id} className="card-wtb p-4 w-full text-left" onClick={() => openDetail(b)}>
+                <span className="flex flex-wrap gap-2 justify-between">
+                  <strong>{b.customer_name}</strong><StatusBadge status={b.status} />
+                </span>
+                <span className="block text-sm mt-2">{format(new Date(b.date), "EEE d MMM yyyy")} · {b.start_time}</span>
+                <span className="block text-sm">{b.shop_name} · {b.appointment_type_name}</span>
+                <span className="block text-xs mt-2" style={{ color: "var(--gold-deep)" }}>{b.reference} · View booking</span>
+              </button>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
+          <div className="card-wtb overflow-x-auto hidden lg:block" data-testid="bookings-table">
+            <table className="w-full text-sm font-sans-j">
+              <thead>
+                <tr className="text-left" style={{ background: "var(--ivory-2)" }}>
+                  {["Date", "Time", "Customer", "Boutique", "Appointment", "Status", ""].map((h) => (
+                    <th key={h} className="field-label p-4">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((b) => (
+                  <tr key={b.id} className="border-t hover:bg-[var(--ivory-2)]" style={{ borderColor: "var(--line)" }}
+                    data-testid={`booking-row-${b.reference}`}>
+                    <td className="p-4 whitespace-nowrap">{format(new Date(b.date), "EEE d MMM")}</td>
+                    <td className="p-4" style={{ color: "var(--gold-deep)" }}>{b.start_time}</td>
+                    <td className="p-4">{b.customer_name}</td>
+                    <td className="p-4">{b.shop_name}</td>
+                    <td className="p-4">{b.appointment_type_name}</td>
+                    <td className="p-4"><StatusBadge status={b.status} /></td>
+                    <td className="p-4 text-right"><button className="btn-wtb btn-ghost-wtb" onClick={() => openDetail(b)} aria-label={`View booking for ${b.customer_name}`}>View</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
-      <Modal open={!!active} onClose={() => setActive(null)} title="Booking Details" testid="booking-modal">
+      <Modal open={!!active} onClose={closeDetail} title="Booking Details" testid="booking-modal">
         {active && (
           <div className="space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 font-sans-j text-sm">
               <Info k="Reference" v={active.reference} />
               <Info k="Status" v={<StatusBadge status={active.status} />} />
               <Info k="Customer" v={active.customer_name} />
-              <Info k="Phone" v={active.customer_phone} />
-              <Info k="Email" v={active.customer_email} />
+              <Info k="Phone" v={active.customer_phone && <a href={`tel:${active.customer_phone}`}>{active.customer_phone}</a>} />
+              <Info k="Email" v={active.customer_email && <a href={`mailto:${active.customer_email}`}>{active.customer_email}</a>} />
               <Info k="Duration" v={`${active.duration} min`} />
               <Info k="Boutique" v={active.shop_name} />
               <Info k="Appointment" v={active.appointment_type_name} />
@@ -235,7 +304,7 @@ export default function Bookings() {
               <button className="btn-wtb" style={{ borderColor: "#6b3f8a", color: "#6b3f8a" }} onClick={() => setStatus(active, "no_show")} data-testid="noshow-booking">No-show</button>
               <button className="btn-wtb" style={{ borderColor: "#9a4a3f", color: "#9a4a3f" }} onClick={() => setStatus(active, "cancelled")} data-testid="cancel-booking">Cancel</button>
             </div>
-            <button className="btn-wtb btn-ghost-wtb w-full" onClick={() => setActive(null)} data-testid="close-booking-modal">Close</button>
+            <button className="btn-wtb btn-ghost-wtb w-full" onClick={closeDetail} data-testid="close-booking-modal">Close</button>
           </div>
         )}
       </Modal>

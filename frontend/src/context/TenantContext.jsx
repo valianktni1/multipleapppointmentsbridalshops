@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Outlet } from "react-router-dom";
 import api from "@/lib/api";
@@ -21,24 +21,52 @@ function resetBranding() {
 
 export default function TenantLayout() {
   const { tenant: slug } = useParams();
+  return <TenantScope key={slug} slug={slug} />;
+}
+
+function TenantScope({ slug }) {
   const [tenant, setTenant] = useState(null); // null=loading, false=notfound, obj
+  const [loadError, setLoadError] = useState(false);
+  const request = useRef(null);
 
   const load = useCallback(async () => {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    setLoadError(false);
     try {
-      const { data } = await api.get("/tenant/context", { headers: { "X-Tenant": slug } });
+      const { data } = await api.get("/tenant/context", {
+        headers: { "X-Tenant": slug }, signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
       setTenant(data);
       applyBranding(data.branding);
       if (data.branding?.brand_name) document.title = `${data.branding.brand_name} · Appointments`;
     } catch (e) {
-      setTenant(false);
+      if (controller.signal.aborted) return;
+      if (e.response?.status === 404) setTenant(false);
+      else setLoadError(true);
     }
   }, [slug]);
 
   useEffect(() => {
     load();
-    return () => resetBranding();
+    return () => {
+      request.current?.abort();
+      resetBranding();
+    };
   }, [load]);
 
+  if (loadError && tenant === null) {
+    return (
+      <div className="min-h-screen grid place-items-center px-6">
+        <div className="card-wtb p-8 text-center" role="alert">
+          <h1 className="text-3xl mb-4">We couldn’t load this booking site</h1>
+          <button type="button" className="btn-wtb btn-gold" onClick={load}>Try again</button>
+        </div>
+      </div>
+    );
+  }
   if (tenant === null) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--ivory)" }}>
